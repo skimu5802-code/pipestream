@@ -1,0 +1,6 @@
+{
+  "name": "PipeStream",
+  "description": "Ad-free media streaming and downloading powered by stream extraction with background playback and local library.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
