@@ -3,8 +3,8 @@ name: Build and Release Android APK
 on:
   push:
     tags:
-      - 'v*' # যেমন v1.0.0, v1.0.1 পুশ করলেই ট্রিগার হবে
-  workflow_dispatch: # চাইলে আপনি GitHub Actions ট্যাব থেকে "Run workflow" বাটনে ক্লিক করে ম্যানুয়ালিও চালাতে পারবেন
+      - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,13 +22,14 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon
 
       - name: Create GitHub Release and Upload APK
         uses: softprops/action-gh-release@v2
