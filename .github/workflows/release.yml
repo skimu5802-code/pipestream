@@ -31,14 +31,14 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      # প্রোডাকশন রিলিজ কি-স্টোর তৈরি করা
-      - name: Generate Release Keystore
+      # Gradle-এর প্রত্যাশিত my-upload-key.jks কি-স্টোর ফাইলটি তৈরি করা
+      - name: Generate JKS Keystore for Gradle
         run: |
           keytool -genkey -v \
-            -keystore release.keystore \
-            -storepass "pipestreampassword" \
-            -alias "pipestream" \
-            -keypass "pipestreampassword" \
+            -keystore my-upload-key.jks \
+            -storepass "android" \
+            -alias "upload" \
+            -keypass "android" \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
@@ -48,33 +48,13 @@ jobs:
       - name: Build Release APK
         run: gradle assembleRelease --no-daemon
 
-      # অফিসিয়াল Android apksigner ও zipalign দিয়ে APK সাইন করা
-      - name: Sign & Align Release APK
+      # তৈরি হওয়া Release APK সাজানো
+      - name: Prepare APK for Release
         run: |
           mkdir -p release-artifacts
-          
-          # বিল্ড হওয়া APK খুঁজে বের করা
           APK_FILE=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          echo "Found APK: $APK_FILE"
-          
-          # লেটেস্ট বিল্ড টুলস ডিরেক্টরি বের করা
-          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
-          echo "Using Android Build Tools: $BUILD_TOOLS_DIR"
-          
-          # Zipalign এবং সাইন সম্পন্ন করা
-          $BUILD_TOOLS_DIR/zipalign -v -p 4 "$APK_FILE" release-artifacts/PipeStream-aligned.apk
-          
-          $BUILD_TOOLS_DIR/apksigner sign \
-            --ks release.keystore \
-            --ks-key-alias pipestream \
-            --ks-pass pass:pipestreampassword \
-            --key-pass pass:pipestreampassword \
-            --out release-artifacts/PipeStream-Release.apk \
-            release-artifacts/PipeStream-aligned.apk
-            
-          # সাইনিং ভেরিফিকেশন চেক
-          $BUILD_TOOLS_DIR/apksigner verify release-artifacts/PipeStream-Release.apk
-          echo "APK successfully signed and verified!"
+          echo "Found release APK: $APK_FILE"
+          cp "$APK_FILE" release-artifacts/PipeStream-Release.apk
 
       # GitHub Releases-এ ফাইনাল Production APK আপলোড করা
       - name: Create GitHub Release and Upload APK
