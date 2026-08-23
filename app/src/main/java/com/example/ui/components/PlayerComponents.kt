@@ -144,6 +144,21 @@ import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 
 
+private fun enterFullscreen(activity: Activity) {
+    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+        hide(WindowInsetsCompat.Type.systemBars())
+        systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    }
+}
+
+private fun exitFullscreen(activity: Activity) {
+    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+    WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+        show(WindowInsetsCompat.Type.systemBars())
+    }
+}
+
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerView(
@@ -215,12 +230,50 @@ fun VideoPlayerView(
 
     Box(
         modifier = viewportModifier
-            .pointerInput(Unit) {
+            .pointerInput(isLandscape) {
+                var totalY = 0f
+                var totalX = 0f
+                var gestureTriggered = false
                 detectDragGestures(
+                    onDragStart = {
+                        totalY = 0f
+                        totalX = 0f
+                        gestureTriggered = false
+                    },
+                    onDragEnd = {
+                        totalY = 0f
+                        totalX = 0f
+                        gestureTriggered = false
+                    },
+                    onDragCancel = {
+                        totalY = 0f
+                        totalX = 0f
+                        gestureTriggered = false
+                    },
                     onDrag = { change, dragAmount ->
-                        if (dragAmount.y > 18f) {
-                            change.consume()
-                            onCollapse()
+                        totalY += dragAmount.y
+                        totalX += dragAmount.x
+                        if (!gestureTriggered && Math.abs(totalY) > Math.abs(totalX) * 1.2f) {
+                            if (isLandscape) {
+                                // Fullscreen: Swipe down to exit fullscreen
+                                if (totalY > 30f) {
+                                    gestureTriggered = true
+                                    change.consume()
+                                    (context as? Activity)?.let { exitFullscreen(it) }
+                                }
+                            } else {
+                                // Portrait: Swipe UP to enter fullscreen
+                                if (totalY < -30f) {
+                                    gestureTriggered = true
+                                    change.consume()
+                                    (context as? Activity)?.let { enterFullscreen(it) }
+                                } else if (totalY > 30f) {
+                                    // Portrait: Swipe DOWN to collapse
+                                    gestureTriggered = true
+                                    change.consume()
+                                    onCollapse()
+                                }
+                            }
                         }
                     }
                 )
@@ -494,12 +547,16 @@ fun VideoPlayerView(
                                 colors = listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent)
                             )
                         )
-                        .pointerInput(Unit) {
+                        .pointerInput(isLandscape) {
                             detectDragGestures(
                                 onDrag = { change, dragAmount ->
                                     if (dragAmount.y > 15f) {
                                         change.consume()
-                                        onCollapse()
+                                        if (isLandscape) {
+                                            (context as? Activity)?.let { exitFullscreen(it) }
+                                        } else {
+                                            onCollapse()
+                                        }
                                     }
                                 }
                             )
@@ -514,7 +571,13 @@ fun VideoPlayerView(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         IconButton(
-                            onClick = onCollapse,
+                            onClick = {
+                                if (isLandscape) {
+                                    (context as? Activity)?.let { exitFullscreen(it) }
+                                } else {
+                                    onCollapse()
+                                }
+                            },
                             modifier = Modifier.size(36.dp).testTag("collapse_player_button")
                         ) {
                             Icon(
@@ -772,16 +835,9 @@ fun VideoPlayerView(
                                     activity?.let { act ->
                                         val isCurrentLandscape = act.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
                                         if (isCurrentLandscape) {
-                                            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                                            WindowInsetsControllerCompat(act.window, act.window.decorView).apply {
-                                                show(WindowInsetsCompat.Type.systemBars())
-                                            }
+                                            exitFullscreen(act)
                                         } else {
-                                            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                            WindowInsetsControllerCompat(act.window, act.window.decorView).apply {
-                                                hide(WindowInsetsCompat.Type.systemBars())
-                                                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                                            }
+                                            enterFullscreen(act)
                                         }
                                     }
                                 },

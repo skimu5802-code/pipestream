@@ -109,6 +109,7 @@ class PlaybackNotificationService : Service() {
         // Immediately start foreground synchronously to avoid ForegroundServiceDidNotStartInTimeException
         val stream = manager?.playbackState?.value?.currentStream
         val isPlaying = manager?.playbackState?.value?.isPlaying ?: false
+        val isBuffering = manager?.playbackState?.value?.isBuffering ?: false
         val initialNotif = buildNotificationSync(
             title = stream?.title ?: "Playing Media",
             uploader = stream?.uploaderName ?: "PipeStream",
@@ -117,7 +118,7 @@ class PlaybackNotificationService : Service() {
         )
         startServiceInForeground(initialNotif)
 
-        if (isPlaying) {
+        if (isPlaying || isBuffering || manager?.player?.playWhenReady == true) {
             acquireLocks()
         }
 
@@ -147,12 +148,8 @@ class PlaybackNotificationService : Service() {
 
             if (wifiLock == null) {
                 val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
-                }
+                @Suppress("DEPRECATION")
+                val mode = WifiManager.WIFI_MODE_FULL_HIGH_PERF
                 wifiLock = wm?.createWifiLock(mode, "PipeStream:PlaybackServiceWifiLock")?.apply {
                     setReferenceCounted(false)
                 }
@@ -160,7 +157,7 @@ class PlaybackNotificationService : Service() {
             wifiLock?.let {
                 if (!it.isHeld) {
                     it.acquire()
-                    Log.d(TAG, "WifiLock acquired for background streaming")
+                    Log.d(TAG, "WifiLock acquired for continuous background streaming")
                 }
             }
         } catch (e: Exception) {
@@ -217,7 +214,8 @@ class PlaybackNotificationService : Service() {
                 if (state.currentStream == null) {
                     stopForegroundService()
                 } else {
-                    if (state.isPlaying) {
+                    val shouldHoldLocks = state.isPlaying || state.isBuffering || (manager.player.playWhenReady && !state.isEnded)
+                    if (shouldHoldLocks) {
                         acquireLocks()
                     } else {
                         releaseLocks()

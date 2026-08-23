@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,18 +43,18 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.StreamItem
 import com.example.ui.components.CategoryPillRow
-import com.example.ui.components.CompactStreamItem
 import com.example.ui.components.ContinueWatchingRow
-import com.example.ui.components.HeroFeaturedCard
 import com.example.ui.components.PersonalizedSectionHeader
 import com.example.ui.components.StreamCard
 import com.example.ui.theme.AccentAmber
@@ -75,6 +76,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val trendingStreams by viewModel.trendingStreams.collectAsState()
     val personalizedStreams by viewModel.personalizedStreams.collectAsState()
     val subscriptionStreams by viewModel.subscriptionStreams.collectAsState()
@@ -83,16 +85,20 @@ fun HomeScreen(
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val isLoading by viewModel.isTrendingLoading.collectAsState()
     val feedErrorMessage by viewModel.feedErrorMessage.collectAsState()
-
     val contentRegion by viewModel.contentRegion.collectAsState()
 
-    val categories = if (contentRegion.equals("BD", ignoreCase = true)) {
-        listOf("For You", "All", "Natok & Drama", "Music", "Tech", "Islamic", "News", "Gaming", "Podcasts")
-    } else {
-        listOf("For You", "All", "Music", "Gaming", "News", "Tech", "Podcasts")
+    // Map history for fast watch progress lookup
+    val historyMap = remember(historyItems) {
+        historyItems.associateBy { it.streamId }
     }
 
-    // Filter continue watching items (e.g. items with lastPosition > 0 or recent 5 items)
+    val categories = if (contentRegion.equals("BD", ignoreCase = true)) {
+        listOf("All", "For You", "Natok & Drama", "Music", "Tech", "Islamic", "News", "Gaming", "Podcasts")
+    } else {
+        listOf("All", "For You", "Music", "Gaming", "News", "Tech", "Podcasts", "Live")
+    }
+
+    // Filter continue watching items (items with lastPosition > 0 or recent items)
     val continueWatchingItems = historyItems.take(6)
 
     Column(
@@ -101,33 +107,33 @@ fun HomeScreen(
             .background(MaterialTheme.colorScheme.background)
             .testTag("home_screen")
     ) {
-        // Top App Bar
+        // YouTube-Style Top App Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // App Logo & Brand with subtle glow
+            // App Logo & Brand
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    shadowElevation = 4.dp,
-                    modifier = Modifier.size(38.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    color = CrimsonRed,
+                    shadowElevation = 3.dp,
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.PlayCircle,
                             contentDescription = "PipeStream Logo",
-                            tint = MaterialTheme.colorScheme.onPrimary,
+                            tint = Color.White,
                             modifier = Modifier.size(24.dp)
                         )
                     }
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
+                Spacer(modifier = Modifier.width(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "PipeStream",
                         style = MaterialTheme.typography.titleLarge.copy(
@@ -137,66 +143,49 @@ fun HomeScreen(
                             letterSpacing = (-0.5).sp
                         )
                     )
-                    Text(
-                        text = "Stream Player",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp,
-                            letterSpacing = 0.6.sp
-                        )
-                    )
                 }
             }
 
             // Search & Settings Action Buttons
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.size(40.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                IconButton(
+                    onClick = onNavigateToSearch,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("home_search_button")
                 ) {
-                    IconButton(
-                        onClick = onNavigateToSearch,
-                        modifier = Modifier.testTag("home_search_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
-                Spacer(modifier = Modifier.width(10.dp))
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.size(40.dp)
+                IconButton(
+                    onClick = onNavigateToSettings,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("home_settings_button")
                 ) {
-                    IconButton(
-                        onClick = onNavigateToSettings,
-                        modifier = Modifier.testTag("home_settings_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
             }
         }
 
-        // Category pills
+        // YouTube Filter Topics Chip Row
         CategoryPillRow(
             categories = categories,
             selectedCategory = selectedCategory,
             onCategorySelected = { viewModel.loadCategoryFeed(it) },
-            modifier = Modifier.padding(bottom = 6.dp)
+            modifier = Modifier.padding(bottom = 8.dp)
         )
 
         // Pull to refresh stream list
@@ -241,12 +230,12 @@ fun HomeScreen(
                         }
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = if (feedErrorMessage != null) "Extraction Error" else "No Streams Found",
+                            text = if (feedErrorMessage != null) "Feed Connection Notice" else "No Videos Found",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = feedErrorMessage ?: "No live streams returned via NewPipeExtractor.",
+                            text = feedErrorMessage ?: "Please check network connection or tap retry.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -264,11 +253,11 @@ fun HomeScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = 4.dp, bottom = 90.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // 1. Continue Watching Section (if user has active watch history)
-                    if (selectedCategory == "For You" && continueWatchingItems.isNotEmpty()) {
+                    if ((selectedCategory == "For You" || selectedCategory == "All") && continueWatchingItems.isNotEmpty()) {
                         item {
                             ContinueWatchingRow(
                                 items = continueWatchingItems,
@@ -288,136 +277,34 @@ fun HomeScreen(
                         }
                     }
 
-                    // 2. Featured Hero Stream
-                    val heroStream = displayStreams.firstOrNull()
-                    if (heroStream != null) {
-                        item {
-                            HeroFeaturedCard(
-                                stream = heroStream,
-                                onStreamClick = { viewModel.selectAndPlayStream(it) }
-                            )
-                        }
-                    }
+                    // 2. Main YouTube-style video cards feed
+                    items(displayStreams, key = { it.id }) { stream ->
+                        val historyEntry = historyMap[stream.id]
+                        val progress = if (historyEntry != null && historyEntry.durationSeconds > 0) {
+                            (historyEntry.lastPositionMs / 1000f) / historyEntry.durationSeconds
+                        } else null
 
-                    // 3. Personalized Recommendation Carousel (For You)
-                    if (selectedCategory == "For You" && personalizedStreams.isNotEmpty()) {
-                        item {
-                            val headerTitle = if (hasEnoughActivity) {
-                                "Recommended For You"
-                            } else {
-                                "Trending & Popular"
-                            }
-                            val headerSubtitle = if (hasEnoughActivity) {
-                                if (historyItems.isNotEmpty()) "Based on your watch activity and subscriptions" else "Tailored discoveries for you"
-                            } else {
-                                "Trending, popular, and recent mixed videos"
-                            }
-
-                            PersonalizedSectionHeader(
-                                title = headerTitle,
-                                subtitle = headerSubtitle
-                            )
-                        }
-
-                        item {
-                            LazyRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(personalizedStreams.take(8), key = { "rec_${it.id}" }) { stream ->
-                                    StreamCard(
-                                        stream = stream,
-                                        onStreamClick = { viewModel.selectAndPlayStream(it) },
-                                        onDownloadClick = {
-                                            viewModel.selectAndPlayStream(it)
-                                            viewModel.setShowDownloadSheet(true)
-                                        },
-                                        onBookmarkClick = {
-                                            viewModel.toggleBookmark()
-                                        },
-                                        modifier = Modifier.width(280.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 4. Subscribed Channels Stream Carousel (if available)
-                    if (subscriptionStreams.isNotEmpty()) {
-                        item {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Subscriptions,
-                                    contentDescription = null,
-                                    tint = CrimsonRed,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "From Your Subscriptions",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 17.sp,
-                                        color = TextPrimary
-                                    )
-                                )
-                            }
-                        }
-
-                        item {
-                            LazyRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(subscriptionStreams, key = { "sub_${it.id}" }) { stream ->
-                                    StreamCard(
-                                        stream = stream,
-                                        onStreamClick = { viewModel.selectAndPlayStream(it) },
-                                        modifier = Modifier.width(260.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 5. Main Feed Section Title
-                    item {
-                        Text(
-                            text = when (selectedCategory) {
-                                "For You" -> if (contentRegion.equals("BD", ignoreCase = true)) "Trending in Bangladesh" else "Trending in ${viewModel.userCountryName}"
-                                "All" -> if (contentRegion.equals("BD", ignoreCase = true)) "Popular in Bangladesh" else "Trending Now"
-                                else -> "$selectedCategory Highlights"
-                            },
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = TextPrimary
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp)
-                        )
-                    }
-
-                    // 6. Remaining Streams List
-                    val restStreams = if (displayStreams.size > 1) displayStreams.drop(1) else displayStreams
-                    items(restStreams, key = { it.id }) { stream ->
                         StreamCard(
                             stream = stream,
+                            watchProgress = progress,
                             onStreamClick = { viewModel.selectAndPlayStream(it) },
+                            onPlayBackgroundClick = {
+                                viewModel.selectAndPlayStream(it, audioOnly = true)
+                            },
                             onDownloadClick = {
                                 viewModel.selectAndPlayStream(it)
                                 viewModel.setShowDownloadSheet(true)
                             },
                             onBookmarkClick = {
-                                viewModel.toggleBookmark()
+                                viewModel.toggleBookmarkForStream(it)
+                            },
+                            onShareClick = { item ->
+                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                    putExtra(Intent.EXTRA_TEXT, "Watch ${item.title} on PipeStream: https://youtu.be/${item.id}")
+                                    type = "text/plain"
+                                }
+                                val shareIntent = Intent.createChooser(sendIntent, "Share Video")
+                                context.startActivity(shareIntent)
                             }
                         )
                     }
@@ -426,4 +313,5 @@ fun HomeScreen(
         }
     }
 }
+
 

@@ -27,8 +27,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -174,6 +176,9 @@ fun StreamCard(
     onStreamClick: (StreamItem) -> Unit,
     onDownloadClick: (StreamItem) -> Unit = {},
     onBookmarkClick: (StreamItem) -> Unit = {},
+    onPlayBackgroundClick: ((StreamItem) -> Unit)? = null,
+    onShareClick: ((StreamItem) -> Unit)? = null,
+    watchProgress: Float? = null,
     modifier: Modifier = Modifier
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -183,17 +188,18 @@ fun StreamCard(
             .fillMaxWidth()
             .clickable { onStreamClick(stream) }
             .testTag("stream_card_${stream.id}"),
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column {
-            // Thumbnail container
+            // 16:9 Thumbnail container with duration / LIVE badge and progress bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 AsyncImage(
                     model = stream.thumbnailUrl,
@@ -202,52 +208,94 @@ fun StreamCard(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Duration badge
-                Surface(
-                    modifier = Modifier
-                        .padding(10.dp)
-                        .align(Alignment.BottomEnd),
-                    shape = RoundedCornerShape(6.dp),
-                    color = Color.Black.copy(alpha = 0.85f),
-                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.15f))
-                ) {
-                    Text(
-                        text = stream.formattedDuration,
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                // Duration / LIVE badge
+                if (stream.isLive) {
+                    Surface(
+                        modifier = Modifier
+                            .padding(10.dp)
+                            .align(Alignment.BottomEnd),
+                        shape = RoundedCornerShape(4.dp),
+                        color = CrimsonRed
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "LIVE",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+                } else if (stream.formattedDuration.isNotBlank() && stream.formattedDuration != "--:--") {
+                    Surface(
+                        modifier = Modifier
+                            .padding(10.dp)
+                            .align(Alignment.BottomEnd),
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color.Black.copy(alpha = 0.85f),
+                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+                    ) {
+                        Text(
+                            text = stream.formattedDuration,
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp)
+                        )
+                    }
+                }
+
+                // Watched Progress Bar (YouTube Style red line on bottom of thumbnail)
+                if (watchProgress != null && watchProgress > 0f) {
+                    LinearProgressIndicator(
+                        progress = { watchProgress.coerceIn(0.05f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .align(Alignment.BottomCenter),
+                        color = CrimsonRed,
+                        trackColor = Color.Black.copy(alpha = 0.5f)
                     )
                 }
             }
 
-            // Info section
+            // Info section (Avatar + Title/Uploader + 3-dot Menu)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
+                    .padding(12.dp),
                 verticalAlignment = Alignment.Top
             ) {
-                // Channel Avatar with polished outline
+                // Channel Avatar
                 if (stream.uploaderAvatar.isNotBlank()) {
                     Surface(
                         shape = CircleShape,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        color = MaterialTheme.colorScheme.surfaceVariant
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.size(38.dp)
                     ) {
                         AsyncImage(
                             model = stream.uploaderAvatar,
                             contentDescription = stream.uploaderName,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 } else {
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
@@ -256,7 +304,7 @@ fun StreamCard(
                             text = stream.uploaderName.take(1).uppercase(),
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             fontWeight = FontWeight.Black,
-                            fontSize = 16.sp
+                            fontSize = 15.sp
                         )
                     }
                 }
@@ -269,7 +317,7 @@ fun StreamCard(
                         text = stream.title,
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
                             lineHeight = 19.sp
                         ),
@@ -277,8 +325,17 @@ fun StreamCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(3.dp))
+                    val viewsAndDate = buildString {
+                        if (stream.formattedViews.isNotBlank()) {
+                            append(stream.formattedViews)
+                        }
+                        if (stream.uploadedDate.isNotBlank()) {
+                            if (isNotEmpty()) append(" • ")
+                            append(stream.uploadedDate)
+                        }
+                    }
                     Text(
-                        text = "${stream.uploaderName} • ${stream.formattedViews} • ${stream.uploadedDate}",
+                        text = if (viewsAndDate.isNotBlank()) "${stream.uploaderName} • $viewsAndDate" else stream.uploaderName,
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp,
@@ -289,7 +346,7 @@ fun StreamCard(
                     )
                 }
 
-                // Options Menu
+                // Options 3-dot Menu
                 Box {
                     IconButton(
                         onClick = { menuExpanded = true },
@@ -308,6 +365,16 @@ fun StreamCard(
                         onDismissRequest = { menuExpanded = false },
                         modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
                     ) {
+                        if (onPlayBackgroundClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("Play in Background", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
+                                leadingIcon = { Icon(Icons.Default.Headphones, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onPlayBackgroundClick(stream)
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Download Stream", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
                             leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
@@ -324,6 +391,16 @@ fun StreamCard(
                                 onBookmarkClick(stream)
                             }
                         )
+                        if (onShareClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("Share", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
+                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onShareClick(stream)
+                                }
+                            )
+                        }
                     }
                 }
             }

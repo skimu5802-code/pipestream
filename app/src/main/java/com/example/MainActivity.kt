@@ -13,6 +13,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.example.player.PlaybackNotificationService
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -56,6 +58,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +74,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.ui.components.ClipboardLinkModal
 import com.example.ui.components.DownloadBottomSheet
 import com.example.ui.components.MiniPlayerBar
+import com.example.ui.components.UpdateDialog
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.PlayerScreen
@@ -114,6 +118,11 @@ class MainActivity : ComponentActivity() {
 
         checkNotificationPermission()
         handleIncomingIntent(intent)
+
+        // Automatically check for updates on launch in background
+        lifecycleScope.launch {
+            viewModel.updateManager.checkForUpdates(isManualCheck = false)
+        }
 
         setContent {
             val dynamicColor by viewModel.dynamicColorEnabled.collectAsState()
@@ -268,6 +277,8 @@ fun PipeStreamApp(viewModel: MainViewModel) {
     val activeDetails by viewModel.activeStreamDetails.collectAsState()
     val snackbarMsg by viewModel.snackBarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+    val updateState by viewModel.updateManager.updateState.collectAsState()
 
     LaunchedEffect(snackbarMsg) {
         if (snackbarMsg != null) {
@@ -457,5 +468,19 @@ fun PipeStreamApp(viewModel: MainViewModel) {
                 }
             )
         }
+
+        // GitHub In-App Updater Dialog
+        UpdateDialog(
+            updateState = updateState,
+            onDismiss = { viewModel.updateManager.dismissUpdate() },
+            onUpdateClick = { release ->
+                coroutineScope.launch {
+                    viewModel.updateManager.downloadAndInstallApk(release)
+                }
+            },
+            onInstallClick = { apkFile ->
+                viewModel.updateManager.installApk(apkFile)
+            }
+        )
     }
 }

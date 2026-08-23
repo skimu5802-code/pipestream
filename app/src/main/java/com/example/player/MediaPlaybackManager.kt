@@ -95,11 +95,11 @@ class MediaPlaybackManager(private val context: Context) {
     private var sleepTimerJob: Job? = null
     private var streamRetryAttempt = 0
 
-    // HTTP Data Source with custom User-Agent and fast timeouts
+    // HTTP Data Source with custom User-Agent and robust timeouts for screen-off playback
     private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
         .setUserAgent(USER_AGENT)
-        .setConnectTimeoutMs(8000)
-        .setReadTimeoutMs(15000)
+        .setConnectTimeoutMs(15000)
+        .setReadTimeoutMs(30000)
         .setAllowCrossProtocolRedirects(true)
         .setDefaultRequestProperties(
             mapOf(
@@ -145,7 +145,7 @@ class MediaPlaybackManager(private val context: Context) {
             android.Manifest.permission.WAKE_LOCK
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     ) {
-        C.WAKE_MODE_LOCAL
+        C.WAKE_MODE_NETWORK
     } else {
         C.WAKE_MODE_NONE
     }

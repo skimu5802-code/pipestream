@@ -74,40 +74,38 @@ class ExtractorEngine {
                     else -> region
                 }
 
-                val items: List<StreamItem>? = if (category.equals("All", ignoreCase = true) || category.equals("Trending", ignoreCase = true)) {
+                val rawItems: List<StreamItem>? = if (category.equals("All", ignoreCase = true) || category.equals("Trending", ignoreCase = true)) {
                     val kioskList = fetchNewPipeTrending()
-                    if (!kioskList.isNullOrEmpty() && !region.equals("BD", ignoreCase = true)) {
-                        kioskList
+                    val collected = mutableListOf<StreamItem>()
+                    if (region.equals("BD", ignoreCase = true)) {
+                        fetchCategoryViaSearch("bangladesh trending new videos today 2025 2026")?.let { collected.addAll(it) }
+                        fetchCategoryViaSearch("bangla new natok drama music 2025 2026")?.let { collected.addAll(it) }
+                        fetchCategoryViaSearch("bangla entertainment tech news viral today")?.let { collected.addAll(it) }
                     } else {
-                        val collected = mutableListOf<StreamItem>()
-                        if (region.equals("BD", ignoreCase = true)) {
-                            fetchCategoryViaSearch("bangladesh trending new natok music songs")?.let { collected.addAll(it) }
-                            fetchCategoryViaSearch("top trending videos bangladesh today")?.let { collected.addAll(it) }
-                            fetchCategoryViaSearch("bangla entertainment tech news viral")?.let { collected.addAll(it) }
-                        } else {
-                            fetchCategoryViaSearch("trending in $countryName")?.let { collected.addAll(it) }
-                            fetchCategoryViaSearch("top viral popular videos $countryName")?.let { collected.addAll(it) }
-                        }
-                        if (kioskList != null) collected.addAll(kioskList)
-                        collected.distinctBy { it.id }.ifEmpty { kioskList }
+                        fetchCategoryViaSearch("trending videos in $countryName today 2025 2026")?.let { collected.addAll(it) }
+                        fetchCategoryViaSearch("top viral popular videos $countryName 2025 2026")?.let { collected.addAll(it) }
                     }
+                    if (kioskList != null) collected.addAll(kioskList)
+                    collected.distinctBy { it.id }.ifEmpty { kioskList }
                 } else {
                     val query = when (category.lowercase()) {
-                        "music" -> if (region.equals("BD", ignoreCase = true)) "bangla trending songs music official" else "trending music official songs $countryName"
-                        "gaming" -> if (region.equals("BD", ignoreCase = true)) "bangla gaming streamer gameplay live" else "trending gaming gameplay $countryName"
-                        "news" -> if (region.equals("BD", ignoreCase = true)) "bangladesh news today live bulletin" else "latest news today highlights $countryName"
-                        "tech" -> if (region.equals("BD", ignoreCase = true)) "bangla tech review smartphone gadgets" else "technology review latest gadgets"
-                        "podcasts" -> if (region.equals("BD", ignoreCase = true)) "bangla podcast talk show full episode" else "popular podcast full episode $countryName"
-                        "natok & drama" -> "bangla new natok drama comedy full"
-                        "islamic" -> "bangla waz islamic discussion quran"
-                        else -> "$category trending $countryName"
+                        "music" -> if (region.equals("BD", ignoreCase = true)) "bangla trending songs music official new 2025 2026" else "trending music official songs latest 2025 2026 $countryName"
+                        "gaming" -> if (region.equals("BD", ignoreCase = true)) "bangla gaming streamer gameplay live 2025 2026" else "trending gaming gameplay latest 2025 2026 $countryName"
+                        "news" -> if (region.equals("BD", ignoreCase = true)) "bangladesh news today live bulletin latest" else "latest news today highlights $countryName"
+                        "tech" -> if (region.equals("BD", ignoreCase = true)) "bangla tech review smartphone gadgets latest 2025 2026" else "technology review latest gadgets 2025 2026"
+                        "podcasts" -> if (region.equals("BD", ignoreCase = true)) "bangla podcast talk show full episode latest 2025 2026" else "popular podcast full episode latest 2025 2026 $countryName"
+                        "natok & drama" -> "bangla new natok drama comedy full episode 2025 2026"
+                        "islamic" -> "bangla new waz islamic discussion quran 2025 2026"
+                        "live" -> if (region.equals("BD", ignoreCase = true)) "bangla news live stream today" else "live stream today $countryName"
+                        else -> "$category trending latest 2025 2026 $countryName"
                     }
                     fetchCategoryViaSearch(query)
                 }
 
-                if (!items.isNullOrEmpty()) {
-                    trendingCache.put(cacheKey, items)
-                    return@withContext Result.success(items)
+                if (!rawItems.isNullOrEmpty()) {
+                    val freshItems = filterAndRankByFreshness(rawItems, strictRecency = true)
+                    trendingCache.put(cacheKey, freshItems)
+                    return@withContext Result.success(freshItems)
                 }
                 return@withContext Result.failure(Exception("No streams returned by NewPipeExtractor for category $category in $region."))
             } catch (e: Exception) {
@@ -115,6 +113,62 @@ class ExtractorEngine {
                 return@withContext Result.failure(Exception(e.message ?: "Could not fetch streams via NewPipeExtractor."))
             }
         }
+
+    /**
+     * YouTube-Style Recency & Freshness Scorer
+     * Filters out stale content (e.g. 2+ or 4+ years old) and prioritizes recent, viral, and newly released videos.
+     */
+    fun filterAndRankByFreshness(items: List<StreamItem>, strictRecency: Boolean = true): List<StreamItem> {
+        if (items.isEmpty()) return items
+
+        fun calculateFreshnessScore(item: StreamItem): Int {
+            val date = item.uploadedDate.lowercase().trim()
+            val title = item.title.lowercase()
+
+            // Calculate base date score
+            var score = when {
+                date.contains("second") || date.contains("minute") || date.contains("hour") || date.contains("just now") || item.isLive -> 1000
+                date.contains("yesterday") || date.contains("1 day") || date.contains("2 day") || date.contains("3 day") || date.contains("4 day") || date.contains("5 day") || date.contains("6 day") || (date.contains("day") && !date.contains("year")) -> 800
+                date.contains("1 week") || date.contains("2 week") || date.contains("3 week") || date.contains("4 week") || (date.contains("week") && !date.contains("year")) -> 650
+                date.contains("1 month") || date.contains("2 month") || date.contains("3 month") -> 450
+                date.contains("4 month") || date.contains("5 month") || date.contains("6 month") -> 300
+                date.contains("7 month") || date.contains("8 month") || date.contains("9 month") || date.contains("10 month") || date.contains("11 month") -> 150
+                date.contains("1 year") -> 0
+                date.contains("2 year") -> -350
+                date.contains("3 year") || date.contains("4 year") || date.contains("5 year") || date.contains("6 year") || date.contains("7 year") || date.contains("8 year") || date.contains("9 year") || date.contains("10 year") || date.contains("year") -> -900
+                else -> 100 // Unknown / specific date format
+            }
+
+            // Boost for modern keywords in title
+            if (title.contains("2026") || title.contains("2025") || title.contains("new episode") || title.contains("official trailer") || title.contains("new song") || title.contains("highlights") || title.contains("today")) {
+                score += 150
+            }
+
+            // Penalize old years in title
+            if (title.contains("2017") || title.contains("2018") || title.contains("2019") || title.contains("2020") || title.contains("2021") || title.contains("2022") || title.contains("2023")) {
+                score -= 500
+            }
+
+            return score
+        }
+
+        val scored = items.map { item ->
+            item to calculateFreshnessScore(item)
+        }
+
+        // Strict mode: Filter out stale videos (score < 0, i.e., > 1-2 years old)
+        val freshList = scored.filter { it.second >= 0 }
+        val effectiveList = if (strictRecency && freshList.size >= 5) {
+            freshList
+        } else {
+            scored
+        }
+
+        return effectiveList
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .distinctBy { it.id }
+    }
 
     suspend fun getShorts(forceRefresh: Boolean = false): Result<List<StreamItem>> =
         withContext(Dispatchers.IO) {
@@ -243,25 +297,25 @@ class ExtractorEngine {
                 // 1. Trending in user's country/region
                 val trendingDef = async {
                     if (countryCode.equals("BD", ignoreCase = true)) {
-                        fetchCategoryViaSearch("bangladesh trending new videos drama songs")
+                        fetchCategoryViaSearch("bangladesh trending new videos drama songs 2025 2026")
                     } else {
-                        fetchNewPipeTrending() ?: fetchCategoryViaSearch("trending in $countryName")
+                        fetchNewPipeTrending() ?: fetchCategoryViaSearch("trending in $countryName 2025 2026")
                     }
                 }
                 // 2. Popular & Viral hits in user's country
                 val popularDef = async {
                     if (countryCode.equals("BD", ignoreCase = true)) {
-                        fetchCategoryViaSearch("bangla viral song drama tech entertainment")
+                        fetchCategoryViaSearch("bangla viral song drama tech entertainment 2025 2026")
                     } else {
-                        fetchCategoryViaSearch("top popular songs and videos $countryName") ?: fetchCategoryViaSearch("viral videos $countryName")
+                        fetchCategoryViaSearch("top popular songs and videos $countryName 2025 2026") ?: fetchCategoryViaSearch("viral videos $countryName")
                     }
                 }
                 // 3. Recent mixed videos across music, tech, entertainment
                 val recentDef = async {
                     if (countryCode.equals("BD", ignoreCase = true)) {
-                        fetchCategoryViaSearch("bangla new releases music review podcast")
+                        fetchCategoryViaSearch("bangla new releases music review podcast today 2025 2026")
                     } else {
-                        fetchCategoryViaSearch("latest music gaming tech $countryName") ?: fetchCategoryViaSearch("new releases today $countryName")
+                        fetchCategoryViaSearch("latest music gaming tech $countryName 2025 2026") ?: fetchCategoryViaSearch("new releases today $countryName")
                     }
                 }
 
@@ -290,10 +344,11 @@ class ExtractorEngine {
             }
         }
 
-        if (combined.isNotEmpty()) {
-            searchCache.put(cacheKey, combined)
+        val freshCombined = filterAndRankByFreshness(combined, strictRecency = true)
+        if (freshCombined.isNotEmpty()) {
+            searchCache.put(cacheKey, freshCombined)
         }
-        combined
+        freshCombined
     }
 
     suspend fun getPersonalizedFeed(
@@ -324,19 +379,19 @@ class ExtractorEngine {
             }
         }
 
-        // 3. Concurrently fetch recommendations based on creators and watched topics
+        // 3. Concurrently fetch recommendations based on creators and watched topics with recency bias
         try {
             coroutineScope {
                 val creatorDefs = creators.take(4).map { creator ->
-                    async { fetchCategoryViaSearch("$creator new") ?: fetchCategoryViaSearch(creator) }
+                    async { fetchCategoryViaSearch("$creator latest new 2025 2026") ?: fetchCategoryViaSearch("$creator new") }
                 }
                 val topicDefs = topicQueries.take(3).map { topic ->
-                    async { fetchCategoryViaSearch(topic) }
+                    async { fetchCategoryViaSearch("$topic latest new 2025 2026") ?: fetchCategoryViaSearch(topic) }
                 }
 
                 creatorDefs.forEach { def ->
                     def.await()?.let { list ->
-                        list.take(3).forEach { item ->
+                        list.take(4).forEach { item ->
                             if (seenIds.add(item.id)) {
                                 candidates.add(item)
                             }
@@ -346,7 +401,7 @@ class ExtractorEngine {
 
                 topicDefs.forEach { def ->
                     def.await()?.let { list ->
-                        list.take(3).forEach { item ->
+                        list.take(4).forEach { item ->
                             if (seenIds.add(item.id)) {
                                 candidates.add(item)
                             }
@@ -368,7 +423,7 @@ class ExtractorEngine {
             }
         }
 
-        candidates.distinctBy { it.id }
+        filterAndRankByFreshness(candidates, strictRecency = true)
     }
 
     suspend fun search(query: String, filter: String = "all"): Result<List<StreamItem>> =

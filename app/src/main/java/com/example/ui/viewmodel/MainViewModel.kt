@@ -17,6 +17,7 @@ import com.example.data.model.HistoryEntity
 import com.example.data.model.StreamDetails
 import com.example.data.model.StreamItem
 import com.example.data.model.SubscriptionEntity
+import com.example.data.updater.AppUpdateManager
 import com.example.player.DownloadHelper
 import com.example.player.MediaPlaybackManager
 import com.example.player.PlaybackState
@@ -42,6 +43,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val extractor = ExtractorEngine()
     val playbackManager = MediaPlaybackManager(application.applicationContext)
     val downloadHelper = DownloadHelper(application.applicationContext, downloadDao)
+    val updateManager = AppUpdateManager(application.applicationContext)
 
     val playbackState: StateFlow<PlaybackState> = playbackManager.playbackState
 
