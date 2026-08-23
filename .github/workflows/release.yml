@@ -31,7 +31,7 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      # Gradle-এর প্রত্যাশিত my-upload-key.jks কি-স্টোর ফাইলটি তৈরি করা
+      # রিলিজ কি-স্টোর তৈরি করা
       - name: Generate JKS Keystore for Gradle
         run: |
           keytool -genkey -v \
@@ -44,11 +44,20 @@ jobs:
             -validity 10000 \
             -dname "CN=PipeStream,OU=App,O=PipeStream,C=US"
 
-      # Release APK বিল্ড করা
+      # পাসওয়ার্ড ও কি-প্যারামিটার সহ Release APK বিল্ড করা
       - name: Build Release APK
-        run: gradle assembleRelease --no-daemon
+        env:
+          KEYSTORE_PASSWORD: "android"
+          KEY_PASSWORD: "android"
+          KEY_ALIAS: "upload"
+        run: |
+          gradle assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$(pwd)/my-upload-key.jks \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=upload \
+            -Pandroid.injected.signing.key.password=android
 
-      # তৈরি হওয়া Release APK সাজানো
+      # তৈরি হওয়া Release APK প্রস্তুত করা
       - name: Prepare APK for Release
         run: |
           mkdir -p release-artifacts
