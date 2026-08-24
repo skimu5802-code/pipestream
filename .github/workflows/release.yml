@@ -31,18 +31,20 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      # স্থায়ী রিলিজ কি-স্টোর সেটআপ (যদি সিক্রেট থাকে তবে ডিকোড করবে, অন্যথায় রিপোজিটরির পার্মানেন্ট কি ব্যবহার করবে)
+      # স্থায়ী রিলিজ কি-স্টোর সেটআপ (Base64 ডিকোড করে কি-স্টোর প্রস্তুত করা)
       - name: Setup Permanent Release Keystore
         run: |
           if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
             echo "Using keystore from GitHub Secrets..."
-            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > my-upload-key.jks
+            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > my-upload-key.jks
+          elif [ -f "my-upload-key.base64" ]; then
+            echo "Decoding permanent keystore from repository base64 file..."
+            base64 -d my-upload-key.base64 > my-upload-key.jks
           else
-            echo "Using permanent repository keystore..."
-            if [ ! -f "my-upload-key.jks" ]; then
-              echo "Error: my-upload-key.jks not found!"
-              exit 1
-            fi
+            echo "Using embedded permanent release keystore..."
+            cat << 'EOF' | base64 -d > my-upload-key.jks
+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
+EOF
           fi
           # কি-স্টোরের ফিঙ্গারপ্রিন্ট ভেরিফাই করা
           keytool -list -v -keystore my-upload-key.jks -storepass "${{ secrets.KEYSTORE_PASSWORD || 'android' }}" -alias "${{ secrets.KEY_ALIAS || 'upload' }}"
