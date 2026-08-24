@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import com.example.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -177,12 +178,12 @@ class AppUpdateManager(private val context: Context) {
         _updateState.value = UpdateState.Idle
     }
 
-    private fun getAppVersionName(): String {
+    fun getAppVersionName(): String {
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "1.0.0"
+            packageInfo.versionName ?: BuildConfig.VERSION_NAME
         } catch (e: Exception) {
-            "1.0.0"
+            BuildConfig.VERSION_NAME
         }
     }
 

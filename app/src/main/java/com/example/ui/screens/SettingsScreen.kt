@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.example.BuildConfig
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -1282,7 +1283,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Installed Version: v${viewModel.updateManager.getAppVersionName()}",
+                            text = "Installed Version: v${BuildConfig.VERSION_NAME}",
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp
