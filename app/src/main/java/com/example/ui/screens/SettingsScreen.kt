@@ -6,6 +6,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.Settings
+import android.os.PowerManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.BuildConfig
@@ -767,6 +769,58 @@ fun SettingsScreen(
                                     uncheckedTrackColor = MaterialTheme.colorScheme.surface
                                 )
                             )
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+
+                        // Unrestricted Background Running (Battery Optimization)
+                        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                        val isIgnoringBatteryOpt = pm?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Unrestricted Background Battery", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    if (isIgnoringBatteryOpt) "Optimal: Android battery restrictions disabled" else "Tap to disable battery restrictions on screen-off",
+                                    color = if (isIgnoringBatteryOpt) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isIgnoringBatteryOpt) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable {
+                                    try {
+                                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                            data = Uri.parse("package:${context.packageName}")
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        try {
+                                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                            context.startActivity(intent)
+                                        } catch (e2: Exception) {
+                                            // Fallback ignored
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    text = if (isIgnoringBatteryOpt) "Enabled" else "Allow",
+                                    color = if (isIgnoringBatteryOpt) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
                         }
 
                         HorizontalDivider(

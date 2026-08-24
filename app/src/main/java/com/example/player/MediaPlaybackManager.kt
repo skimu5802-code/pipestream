@@ -94,16 +94,30 @@ class MediaPlaybackManager(private val context: Context) {
     private var progressJob: Job? = null
     private var sleepTimerJob: Job? = null
     private var streamRetryAttempt = 0
+    private var streamRefreshAttempt = 0
 
-    // HTTP Data Source with custom User-Agent and robust timeouts for screen-off playback
+    private val loadErrorHandlingPolicy = object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
+        override fun getRetryDelayMsFor(loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+            val attempt = loadErrorInfo.errorCount
+            return (1000L * (1 shl (attempt - 1).coerceAtMost(3))).coerceAtMost(5000L)
+        }
+
+        override fun getMinimumLoadableRetryCount(dataType: Int): Int {
+            return 8 // Allow up to 8 retries for transient mobile network/socket interruptions
+        }
+    }
+
+    // HTTP Data Source with custom User-Agent and robust keep-alive timeouts for screen-off playback
     private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
         .setUserAgent(USER_AGENT)
-        .setConnectTimeoutMs(15000)
+        .setConnectTimeoutMs(20000)
         .setReadTimeoutMs(30000)
         .setAllowCrossProtocolRedirects(true)
+        .setKeepPostFor302Redirects(true)
         .setDefaultRequestProperties(
             mapOf(
                 "Accept" to "*/*",
+                "Connection" to "keep-alive",
                 "User-Agent" to USER_AGENT
             )
         )
@@ -123,18 +137,20 @@ class MediaPlaybackManager(private val context: Context) {
         )
 
     private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+        .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
     private val localMediaSourceFactory = DefaultMediaSourceFactory(localFileDataSourceFactory, extractorsFactory)
+        .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
 
-    // Advanced pre-buffer LoadControl for instant startup and bufferless playback experience
+    // Advanced steady pre-buffer LoadControl for continuous seamless screen-off playback
     private val loadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            45000,  // minBufferMs (45s aggressive pre-buffer)
-            120000, // maxBufferMs (up to 2 minutes pre-buffered ahead)
-            250,    // bufferForPlaybackMs (instant fast startup in 250ms, YouTube-like responsiveness)
-            500     // bufferForPlaybackAfterRebufferMs (500ms recovery)
+            30000,  // minBufferMs (30s)
+            60000,  // maxBufferMs (60s continuous refresh)
+            500,    // bufferForPlaybackMs (instant fast startup)
+            1000    // bufferForPlaybackAfterRebufferMs (1000ms recovery)
         )
         .setBackBuffer(
-            30000,  // backBufferDurationMs (30s retained in cache for instant reverse seek)
+            15000,  // backBufferDurationMs
             true    // retainBackBufferFromKeyframe
         )
         .setPrioritizeTimeOverSizeThresholds(true)
@@ -278,6 +294,37 @@ class MediaPlaybackManager(private val context: Context) {
                     val nextStream = candidateStreams[streamRetryAttempt]
                     Log.i(TAG, "Trying alternate stream URL (attempt $streamRetryAttempt of ${candidateStreams.size})...")
                     playDirectUrl(nextStream, current.id, player.currentPosition)
+                    return
+                }
+
+                // If candidate URLs exhausted, automatically re-extract fresh stream URLs (e.g. for expired YouTube session tokens)
+                if (streamRefreshAttempt < 2 && current.id.isNotBlank()) {
+                    streamRefreshAttempt++
+                    Log.w(TAG, "Refreshing stream URLs via ExtractorEngine (attempt $streamRefreshAttempt)...")
+                    val savedPos = player.currentPosition.coerceAtLeast(_playbackState.value.currentPositionMs)
+                    _playbackState.value = _playbackState.value.copy(isBuffering = true)
+                    scope.launch {
+                        try {
+                            val engine = com.example.data.api.ExtractorEngine()
+                            val detailsResult = engine.getStreamDetails(current.id)
+                            val details = detailsResult.getOrNull()
+                            if (details != null && (details.videoStreams.isNotEmpty() || details.audioStreams.isNotEmpty())) {
+                                withContext(Dispatchers.Main) {
+                                    playStream(details, "720p", _playbackState.value.isAudioOnly, savedPos)
+                                }
+                                return@launch
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Stream refresh failed: ${e.message}")
+                        }
+                        withContext(Dispatchers.Main) {
+                            _playbackState.value = _playbackState.value.copy(
+                                isBuffering = false,
+                                isPlaying = false,
+                                errorMessage = "Playback error (${error.errorCodeName}). Tap Retry to reconnect."
+                            )
+                        }
+                    }
                     return
                 }
             }
@@ -510,6 +557,7 @@ class MediaPlaybackManager(private val context: Context) {
 
     fun playStream(details: StreamDetails, preferredQuality: String = "720p", audioOnly: Boolean = false, startPositionMs: Long = 0) {
         streamRetryAttempt = 0
+        streamRefreshAttempt = 0
         Log.d(TAG, "playStream called for ID: ${details.id}, Quality: $preferredQuality, AudioOnly: $audioOnly, startPosition: ${startPositionMs}ms")
         Log.d(TAG, "Streams available: ${details.videoStreams.size} video, ${details.audioStreams.size} audio")
 

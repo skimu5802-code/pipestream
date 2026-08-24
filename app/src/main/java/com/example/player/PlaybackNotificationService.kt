@@ -25,9 +25,19 @@ import com.example.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private data class NotificationStatePayload(
+    val streamId: String?,
+    val title: String?,
+    val uploaderName: String?,
+    val isPlaying: Boolean,
+    val isBuffering: Boolean,
+    val isEnded: Boolean
+)
 
 class PlaybackNotificationService : Service() {
 
@@ -141,15 +151,19 @@ class PlaybackNotificationService : Service() {
             }
             wakeLock?.let {
                 if (!it.isHeld) {
-                    it.acquire(4 * 60 * 60 * 1000L) // 4 hours timeout safety
+                    it.acquire(8 * 60 * 60 * 1000L) // 8 hours timeout safety for continuous playback
                     Log.d(TAG, "WakeLock acquired for background playback")
                 }
             }
 
             if (wifiLock == null) {
                 val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                @Suppress("DEPRECATION")
-                val mode = WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
                 wifiLock = wm?.createWifiLock(mode, "PipeStream:PlaybackServiceWifiLock")?.apply {
                     setReferenceCounted(false)
                 }
@@ -210,19 +224,31 @@ class PlaybackNotificationService : Service() {
                 return@launch
             }
 
-            manager.playbackState.collectLatest { state ->
-                if (state.currentStream == null) {
-                    stopForegroundService()
-                } else {
-                    val shouldHoldLocks = state.isPlaying || state.isBuffering || (manager.player.playWhenReady && !state.isEnded)
-                    if (shouldHoldLocks) {
-                        acquireLocks()
-                    } else {
-                        releaseLocks()
-                    }
-                    updateNotificationAsync()
+            manager.playbackState
+                .map { state ->
+                    NotificationStatePayload(
+                        streamId = state.currentStream?.id,
+                        title = state.currentStream?.title,
+                        uploaderName = state.currentStream?.uploaderName,
+                        isPlaying = state.isPlaying,
+                        isBuffering = state.isBuffering,
+                        isEnded = state.isEnded
+                    )
                 }
-            }
+                .distinctUntilChanged()
+                .collect { payload ->
+                    if (payload.streamId == null) {
+                        stopForegroundService()
+                    } else {
+                        val shouldHoldLocks = payload.isPlaying || payload.isBuffering || (manager.player.playWhenReady && !payload.isEnded)
+                        if (shouldHoldLocks) {
+                            acquireLocks()
+                        } else {
+                            releaseLocks()
+                        }
+                        updateNotificationAsync()
+                    }
+                }
         }
     }
 
