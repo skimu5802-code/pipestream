@@ -1280,6 +1280,13 @@ fun SettingsScreen(
                             fontSize = 12.sp,
                             lineHeight = 17.sp
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Installed Version: v${viewModel.updateManager.getAppVersionName()}",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp
+                        )
 
                         Spacer(modifier = Modifier.height(16.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
@@ -31,12 +34,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.updater.GitHubRelease
@@ -52,6 +60,8 @@ fun UpdateDialog(
     onUpdateClick: (GitHubRelease) -> Unit,
     onInstallClick: (File) -> Unit
 ) {
+    val context = LocalContext.current
+
     when (updateState) {
         is UpdateState.UpdateAvailable -> {
             AlertDialog(
@@ -112,11 +122,18 @@ fun UpdateDialog(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = updateState.release.changelog.ifBlank { "Performance improvements and bug fixes." },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 20.sp
+                        ClickableChangelogText(
+                            rawText = updateState.release.changelog.ifBlank { "Performance improvements and bug fixes." },
+                            onUrlClick = { url ->
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    // Ignore browser launch failure
+                                }
+                            }
                         )
                     }
                 },
@@ -239,4 +256,106 @@ fun UpdateDialog(
 
         else -> {}
     }
+}
+
+/**
+ * Parses markdown links `[Title](url)` and standard `http://` / `https://` URLs
+ * into an annotated string with clickable spans and blue accent styling.
+ */
+@Composable
+fun ClickableChangelogText(
+    rawText: String,
+    onUrlClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val linkColor = MaterialTheme.colorScheme.primary
+    val textColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    val annotatedString = remember(rawText, linkColor, textColor) {
+        buildAnnotatedString {
+            // Regex to match markdown links: [label](url) OR raw URLs: https?://...
+            val combinedRegex = Regex("""\[([^\]]+)\]\((https?://[^\s)]+)\)|(https?://[^\s)\]]+)""")
+            var currentIndex = 0
+
+            combinedRegex.findAll(rawText).forEach { matchResult ->
+                val start = matchResult.range.first
+                val end = matchResult.range.last + 1
+
+                // Append leading plain text
+                if (start > currentIndex) {
+                    append(rawText.substring(currentIndex, start))
+                }
+
+                val markdownLabel = matchResult.groups[1]?.value
+                val markdownUrl = matchResult.groups[2]?.value
+                val rawUrl = matchResult.groups[3]?.value
+
+                if (markdownLabel != null && markdownUrl != null) {
+                    // Markdown Link [Label](URL)
+                    val tagStart = length
+                    append(markdownLabel)
+                    val tagEnd = length
+
+                    addStyle(
+                        style = SpanStyle(
+                            color = linkColor,
+                            fontWeight = FontWeight.SemiBold,
+                            textDecoration = TextDecoration.Underline
+                        ),
+                        start = tagStart,
+                        end = tagEnd
+                    )
+                    addStringAnnotation(
+                        tag = "URL",
+                        annotation = markdownUrl,
+                        start = tagStart,
+                        end = tagEnd
+                    )
+                } else if (rawUrl != null) {
+                    // Raw URL
+                    val tagStart = length
+                    append(rawUrl)
+                    val tagEnd = length
+
+                    addStyle(
+                        style = SpanStyle(
+                            color = linkColor,
+                            fontWeight = FontWeight.Medium,
+                            textDecoration = TextDecoration.Underline
+                        ),
+                        start = tagStart,
+                        end = tagEnd
+                    )
+                    addStringAnnotation(
+                        tag = "URL",
+                        annotation = rawUrl,
+                        start = tagStart,
+                        end = tagEnd
+                    )
+                }
+
+                currentIndex = end
+            }
+
+            // Append trailing plain text
+            if (currentIndex < rawText.length) {
+                append(rawText.substring(currentIndex))
+            }
+        }
+    }
+
+    ClickableText(
+        text = annotatedString,
+        modifier = modifier,
+        style = MaterialTheme.typography.bodyMedium.copy(
+            color = textColor,
+            lineHeight = 20.sp
+        ),
+        onClick = { offset ->
+            annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                .firstOrNull()?.let { annotation ->
+                    onUrlClick(annotation.item)
+                }
+        }
+    )
 }
