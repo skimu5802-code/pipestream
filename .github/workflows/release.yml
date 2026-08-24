@@ -31,31 +31,35 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      # রিলিজ কি-স্টোর তৈরি করা
-      - name: Generate JKS Keystore for Gradle
+      # স্থায়ী রিলিজ কি-স্টোর সেটআপ (যদি সিক্রেট থাকে তবে ডিকোড করবে, অন্যথায় রিপোজিটরির পার্মানেন্ট কি ব্যবহার করবে)
+      - name: Setup Permanent Release Keystore
         run: |
-          keytool -genkey -v \
-            -keystore my-upload-key.jks \
-            -storepass "android" \
-            -alias "upload" \
-            -keypass "android" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=PipeStream,OU=App,O=PipeStream,C=US"
+          if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
+            echo "Using keystore from GitHub Secrets..."
+            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > my-upload-key.jks
+          else
+            echo "Using permanent repository keystore..."
+            if [ ! -f "my-upload-key.jks" ]; then
+              echo "Error: my-upload-key.jks not found!"
+              exit 1
+            fi
+          fi
+          # কি-স্টোরের ফিঙ্গারপ্রিন্ট ভেরিফাই করা
+          keytool -list -v -keystore my-upload-key.jks -storepass "${{ secrets.KEYSTORE_PASSWORD || 'android' }}" -alias "${{ secrets.KEY_ALIAS || 'upload' }}"
 
       # পাসওয়ার্ড ও কি-প্যারামিটার সহ Release APK বিল্ড করা
       - name: Build Release APK
         env:
-          KEYSTORE_PASSWORD: "android"
-          KEY_PASSWORD: "android"
-          KEY_ALIAS: "upload"
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'upload' }}
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'android' }}
         run: |
           gradle assembleRelease --no-daemon \
             -Pandroid.injected.signing.store.file=$(pwd)/my-upload-key.jks \
-            -Pandroid.injected.signing.store.password=android \
-            -Pandroid.injected.signing.key.alias=upload \
-            -Pandroid.injected.signing.key.password=android
+            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD || 'android' }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS || 'upload' }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD || 'android' }}"
 
       # তৈরি হওয়া Release APK প্রস্তুত করা
       - name: Prepare APK for Release
