@@ -117,6 +117,7 @@ fun SettingsScreen(
     val defaultQuality by viewModel.defaultQuality.collectAsState()
     val autoPlayNext by viewModel.autoPlayNext.collectAsState()
     val dataSaverEnabled by viewModel.dataSaverEnabled.collectAsState()
+    val clipboardDetectionEnabled by viewModel.clipboardDetectionEnabled.collectAsState()
     val pauseWatchHistory by viewModel.pauseWatchHistory.collectAsState()
     val cacheSize by viewModel.appCacheSizeMb.collectAsState()
     val currentDownloadPath by viewModel.downloadDirectoryPath.collectAsState()
@@ -872,6 +873,35 @@ fun SettingsScreen(
                             Switch(
                                 checked = dataSaverEnabled,
                                 onCheckedChange = { viewModel.setDataSaverEnabled(it) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                    uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                                    uncheckedTrackColor = MaterialTheme.colorScheme.surface
+                                )
+                            )
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+
+                        // Clipboard Auto-Detection
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Clipboard Link Detection", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Prompt to play or download YouTube links copied to clipboard", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = clipboardDetectionEnabled,
+                                onCheckedChange = { viewModel.setClipboardDetectionEnabled(it) },
                                 colors = SwitchDefaults.colors(
                                     checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                                     checkedTrackColor = MaterialTheme.colorScheme.primary,

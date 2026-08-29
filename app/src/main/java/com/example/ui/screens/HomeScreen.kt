@@ -84,6 +84,7 @@ fun HomeScreen(
     val hasEnoughActivity by viewModel.hasEnoughActivity.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val isLoading by viewModel.isTrendingLoading.collectAsState()
+    val isLoadingMore by viewModel.isLoadingMoreFeed.collectAsState()
     val feedErrorMessage by viewModel.feedErrorMessage.collectAsState()
     val contentRegion by viewModel.contentRegion.collectAsState()
 
@@ -92,14 +93,78 @@ fun HomeScreen(
         historyItems.associateBy { it.streamId }
     }
 
-    val categories = if (contentRegion.equals("BD", ignoreCase = true)) {
-        listOf("All", "For You", "Natok & Drama", "Music", "Tech", "Islamic", "News", "Gaming", "Podcasts")
-    } else {
-        listOf("All", "For You", "Music", "Gaming", "News", "Tech", "Podcasts", "Live")
+    // Dynamic Time-of-Day contextual category tag
+    val currentHour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
+    val timeContextPill = when (currentHour) {
+        in 5..11 -> "☀️ Morning Mix"
+        in 12..16 -> "🌤️ Afternoon"
+        in 17..21 -> "🌆 Evening"
+        else -> "🌙 Night Chill"
     }
 
-    // Filter continue watching items (items with lastPosition > 0 or recent items)
-    val continueWatchingItems = historyItems.take(6)
+    val categories = if (contentRegion.equals("BD", ignoreCase = true)) {
+        listOf("All", "For You", timeContextPill, "Natok & Drama", "Music", "Tech", "Islamic", "News", "Gaming", "Podcasts")
+    } else {
+        listOf("All", "For You", timeContextPill, "Music", "Gaming", "News", "Tech", "Podcasts", "Live")
+    }
+
+    // Lazy list state for infinite scroll pagination
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    // Blend feeds: Subscriptions + Personalized (70%) + Trending (30%)
+    val displayStreams = remember(selectedCategory, personalizedStreams, trendingStreams, subscriptionStreams) {
+        when {
+            selectedCategory == "For You" -> {
+                val combined = mutableListOf<StreamItem>()
+                // Interleave subscription recent videos, personalized recommendations, and trending
+                val seen = mutableSetOf<String>()
+                
+                // Add up to 2 fresh subscription videos at top if available
+                subscriptionStreams.take(2).forEach { item ->
+                    if (seen.add(item.id)) combined.add(item)
+                }
+                
+                // Add personalized recommendations
+                personalizedStreams.forEach { item ->
+                    if (seen.add(item.id)) combined.add(item)
+                }
+
+                // Add remaining subscription videos
+                subscriptionStreams.forEach { item ->
+                    if (seen.add(item.id)) combined.add(item)
+                }
+
+                // Add trending videos
+                trendingStreams.forEach { item ->
+                    if (seen.add(item.id)) combined.add(item)
+                }
+                combined
+            }
+            selectedCategory == "All" -> {
+                val combined = mutableListOf<StreamItem>()
+                val seen = mutableSetOf<String>()
+                // Add top 1 subscription video if available
+                subscriptionStreams.firstOrNull()?.let {
+                    if (seen.add(it.id)) combined.add(it)
+                }
+                trendingStreams.forEach { item ->
+                    if (seen.add(item.id)) combined.add(item)
+                }
+                combined
+            }
+            else -> trendingStreams
+        }
+    }
+
+    // Infinite Dynamic Scroll Trigger
+    androidx.compose.runtime.LaunchedEffect(listState, displayStreams.size, isLoading, isLoadingMore) {
+        androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            .collect { lastVisibleIndex ->
+                if (lastVisibleIndex != null && lastVisibleIndex >= displayStreams.size - 4 && displayStreams.isNotEmpty() && !isLoading && !isLoadingMore) {
+                    viewModel.loadMoreFeed()
+                }
+            }
+    }
 
     Column(
         modifier = modifier
@@ -184,7 +249,17 @@ fun HomeScreen(
         CategoryPillRow(
             categories = categories,
             selectedCategory = selectedCategory,
-            onCategorySelected = { viewModel.loadCategoryFeed(it) },
+            onCategorySelected = { cat ->
+                val targetCategory = if (cat.startsWith("☀️") || cat.startsWith("🌤️") || cat.startsWith("🌆") || cat.startsWith("🌙")) {
+                    when (currentHour) {
+                        in 5..11 -> "Music"
+                        in 12..16 -> "All"
+                        in 17..21 -> "Natok & Drama"
+                        else -> "Podcasts"
+                    }
+                } else cat
+                viewModel.loadCategoryFeed(targetCategory)
+            },
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
@@ -194,12 +269,6 @@ fun HomeScreen(
             onRefresh = { viewModel.loadCategoryFeed(selectedCategory, forceRefresh = true) },
             modifier = Modifier.fillMaxSize()
         ) {
-            val displayStreams = if (selectedCategory == "For You" && personalizedStreams.isNotEmpty()) {
-                (personalizedStreams + trendingStreams).distinctBy { it.id }
-            } else {
-                trendingStreams
-            }
-
             if (displayStreams.isEmpty() && isLoading) {
                 HomeFeedSkeletonList()
             } else if (displayStreams.isEmpty()) {
@@ -252,32 +321,12 @@ fun HomeScreen(
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // 1. Continue Watching Section (if user has active watch history)
-                    if ((selectedCategory == "For You" || selectedCategory == "All") && continueWatchingItems.isNotEmpty()) {
-                        item {
-                            ContinueWatchingRow(
-                                items = continueWatchingItems,
-                                onItemClick = { h ->
-                                    viewModel.selectAndPlayStream(
-                                        StreamItem(
-                                            id = h.streamId,
-                                            title = h.title,
-                                            uploaderName = h.uploaderName,
-                                            uploaderAvatar = h.uploaderAvatar,
-                                            thumbnailUrl = h.thumbnailUrl,
-                                            durationSeconds = h.durationSeconds
-                                        )
-                                    )
-                                }
-                            )
-                        }
-                    }
-
-                    // 2. Main YouTube-style video cards feed
+                    // Main YouTube-style video cards feed
                     items(displayStreams, key = { it.id }) { stream ->
                         val historyEntry = historyMap[stream.id]
                         val progress = if (historyEntry != null && historyEntry.durationSeconds > 0) {
@@ -292,8 +341,7 @@ fun HomeScreen(
                                 viewModel.selectAndPlayStream(it, audioOnly = true)
                             },
                             onDownloadClick = {
-                                viewModel.selectAndPlayStream(it)
-                                viewModel.setShowDownloadSheet(true)
+                                viewModel.openDownloadSheetForStream(it)
                             },
                             onBookmarkClick = {
                                 viewModel.toggleBookmarkForStream(it)
@@ -307,6 +355,35 @@ fun HomeScreen(
                                 context.startActivity(shareIntent)
                             }
                         )
+                    }
+
+                    // Infinite Scroll Loading Indicator at Bottom
+                    if (isLoadingMore) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 20.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    androidx.compose.material3.CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp),
+                                        strokeWidth = 2.5.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "Loading more videos...",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

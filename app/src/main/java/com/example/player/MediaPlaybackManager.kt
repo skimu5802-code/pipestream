@@ -2,6 +2,9 @@ package com.example.player
 
 import android.content.Context
 import android.net.Uri
+import android.net.wifi.WifiManager
+import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -63,30 +66,106 @@ class MediaPlaybackManager(private val context: Context) {
         @Volatile
         var activeInstance: MediaPlaybackManager? = null
             private set
+
+        fun getInstance(context: Context): MediaPlaybackManager {
+            return activeInstance ?: synchronized(this) {
+                activeInstance ?: MediaPlaybackManager(context.applicationContext).also {
+                    activeInstance = it
+                }
+            }
+        }
     }
 
     var isAppInForeground: Boolean = true
         private set
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+
+    private fun acquireLocks() {
+        try {
+            if (wakeLock == null) {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = pm?.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "PipeStream:MediaPlaybackManagerWakeLock"
+                )?.apply {
+                    setReferenceCounted(false)
+                }
+            }
+            wakeLock?.let {
+                if (!it.isHeld) {
+                    it.acquire(12 * 60 * 60 * 1000L) // 12 hours safety
+                    Log.d(TAG, "WakeLock acquired in MediaPlaybackManager")
+                }
+            }
+
+            if (wifiLock == null) {
+                val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
+                wifiLock = wm?.createWifiLock(mode, "PipeStream:MediaPlaybackManagerWifiLock")?.apply {
+                    setReferenceCounted(false)
+                }
+            }
+            wifiLock?.let {
+                if (!it.isHeld) {
+                    it.acquire()
+                    Log.d(TAG, "WifiLock acquired in MediaPlaybackManager")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error acquiring locks: ${e.message}")
+        }
+    }
+
+    private fun releaseLocks() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    Log.d(TAG, "WakeLock released in MediaPlaybackManager")
+                }
+            }
+            wifiLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    Log.d(TAG, "WifiLock released in MediaPlaybackManager")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing locks: ${e.message}")
+        }
+    }
 
     fun setAppInForeground(inForeground: Boolean) {
         isAppInForeground = inForeground
         val currentStream = _playbackState.value.currentStream
         val currentPos = player.currentPosition
 
-        // When moving to the background, trigger WorkManager to persist the current playback position into Room
-        if (!inForeground && currentStream != null && currentStream.id.isNotBlank()) {
-            PlaybackPositionWorker.enqueue(
-                context = context,
-                streamId = currentStream.id,
-                title = currentStream.title,
-                uploader = currentStream.uploaderName,
-                avatar = currentStream.uploaderAvatar,
-                thumbnail = currentStream.description.takeIf { it.startsWith("http") } ?: "",
-                durationSec = currentStream.durationSeconds,
-                positionMs = currentPos,
-                isLocal = _playbackState.value.isLocalFile
-            )
-            PlaybackNotificationService.startNotificationService(context)
+        // When moving to the background or turning screen off
+        if (!inForeground) {
+            if (currentStream != null && currentStream.id.isNotBlank()) {
+                PlaybackPositionWorker.enqueue(
+                    context = context,
+                    streamId = currentStream.id,
+                    title = currentStream.title,
+                    uploader = currentStream.uploaderName,
+                    avatar = currentStream.uploaderAvatar,
+                    thumbnail = currentStream.description.takeIf { it.startsWith("http") } ?: "",
+                    durationSec = currentStream.durationSeconds,
+                    positionMs = currentPos,
+                    isLocal = _playbackState.value.isLocalFile
+                )
+            }
+            if (_playbackState.value.isPlaying || player.playWhenReady) {
+                acquireLocks()
+                PlaybackNotificationService.startNotificationService(context)
+            }
         }
     }
 
@@ -204,8 +283,13 @@ class MediaPlaybackManager(private val context: Context) {
                 hasFirstFrameRendered = if (isPlaying) true else _playbackState.value.hasFirstFrameRendered
             )
             if (isPlaying) {
+                acquireLocks()
+                PlaybackNotificationService.startNotificationService(context)
                 startProgressTracker()
             } else {
+                if (!player.playWhenReady) {
+                    releaseLocks()
+                }
                 stopProgressTracker()
             }
         }
@@ -213,10 +297,16 @@ class MediaPlaybackManager(private val context: Context) {
         override fun onPlaybackStateChanged(state: Int) {
             when (state) {
                 Player.STATE_BUFFERING -> {
+                    acquireLocks()
+                    PlaybackNotificationService.startNotificationService(context)
                     _playbackState.value = _playbackState.value.copy(isBuffering = true, isEnded = false)
                 }
                 Player.STATE_READY -> {
                     streamRetryAttempt = 0
+                    if (player.playWhenReady) {
+                        acquireLocks()
+                        PlaybackNotificationService.startNotificationService(context)
+                    }
                     _playbackState.value = _playbackState.value.copy(
                         isBuffering = false,
                         isEnded = false,
@@ -225,6 +315,7 @@ class MediaPlaybackManager(private val context: Context) {
                     )
                 }
                 Player.STATE_ENDED -> {
+                    releaseLocks()
                     val stopOnEnd = _playbackState.value.stopAtEndOfTrack
                     _playbackState.value = _playbackState.value.copy(
                         isBuffering = false,
@@ -862,6 +953,7 @@ class MediaPlaybackManager(private val context: Context) {
 
         stopProgressTracker()
         sleepTimerJob?.cancel()
+        releaseLocks()
         try {
             player.pause()
             player.clearMediaItems()
@@ -879,6 +971,7 @@ class MediaPlaybackManager(private val context: Context) {
     fun release() {
         stopProgressTracker()
         sleepTimerJob?.cancel()
+        releaseLocks()
         player.removeListener(playerListener)
         try {
             mediaSession.release()

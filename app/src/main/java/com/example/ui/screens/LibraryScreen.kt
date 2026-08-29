@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -62,6 +63,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -97,6 +99,7 @@ fun LibraryScreen(
     val history by viewModel.historyFlow.collectAsState()
     val bookmarks by viewModel.bookmarksFlow.collectAsState()
     val subscriptions by viewModel.subscriptionsFlow.collectAsState()
+    val deletingDownloadIds by viewModel.deletingDownloadIds.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabTitles = listOf(
@@ -177,6 +180,8 @@ fun LibraryScreen(
 
 @Composable
 fun DownloadsTab(downloads: List<DownloadEntity>, viewModel: MainViewModel) {
+    val deletingDownloadIds by viewModel.deletingDownloadIds.collectAsState()
+
     if (downloads.isEmpty()) {
         EmptyStateView(
             icon = Icons.Default.OfflinePin,
@@ -190,17 +195,24 @@ fun DownloadsTab(downloads: List<DownloadEntity>, viewModel: MainViewModel) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(downloads, key = { it.id }) { item ->
-                val isDownloading = item.status == "DOWNLOADING"
-                val isPaused = item.status == "PAUSED"
-                val isFailed = item.status == "FAILED"
-                val isCompleted = item.status == "COMPLETED"
+                val isDeleting = deletingDownloadIds.contains(item.id)
+                val isDownloading = item.status == "DOWNLOADING" && !isDeleting
+                val isPaused = item.status == "PAUSED" && !isDeleting
+                val isFailed = item.status == "FAILED" && !isDeleting
+                val isCompleted = item.status == "COMPLETED" && !isDeleting
 
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .alpha(if (isDeleting) 0.6f else 1.0f)
                         .clickable(enabled = isCompleted) { viewModel.playLocalDownloadedFile(item) },
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    border = BorderStroke(1.dp, if (isDownloading) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant),
+                    border = BorderStroke(
+                        1.dp, 
+                        if (isDeleting) MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                        else if (isDownloading) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) 
+                        else MaterialTheme.colorScheme.outlineVariant
+                    ),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Column(
@@ -265,6 +277,20 @@ fun DownloadsTab(downloads: List<DownloadEntity>, viewModel: MainViewModel) {
                                     modifier = Modifier.padding(top = 2.dp)
                                 ) {
                                     when {
+                                        isDeleting -> {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(11.dp),
+                                                strokeWidth = 1.8.dp,
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Deleting file...",
+                                                color = MaterialTheme.colorScheme.error,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                         isDownloading -> {
                                             Text(
                                                 text = if (item.speedBytesPerSecond > 0) "Downloading • ${formatSpeed(item.speedBytesPerSecond)}" else "Downloading...",
@@ -302,72 +328,84 @@ fun DownloadsTab(downloads: List<DownloadEntity>, viewModel: MainViewModel) {
                             }
 
                             // Actions
-                            if (isDownloading) {
+                            if (isDeleting) {
+                                Box(
+                                    modifier = Modifier.size(40.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            } else if (isDownloading) {
                                 IconButton(
                                     onClick = { viewModel.pauseDownload(item.id) },
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(40.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Pause,
                                         contentDescription = "Pause download",
                                         tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
                                 IconButton(
                                     onClick = { viewModel.deleteDownload(item.id) },
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(40.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Cancel download",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
                             } else if (isPaused || isFailed) {
                                 IconButton(
                                     onClick = { viewModel.retryDownload(item) },
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(40.dp)
                                 ) {
                                     Icon(
                                         imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Refresh,
                                         contentDescription = if (isPaused) "Resume download" else "Retry download",
                                         tint = if (isPaused) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
                                 IconButton(
                                     onClick = { viewModel.deleteDownload(item.id) },
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(40.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
                                         contentDescription = "Delete",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
+                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             } else {
                                 IconButton(
                                     onClick = { viewModel.playLocalDownloadedFile(item) },
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(40.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.PlayArrow,
                                         contentDescription = "Play offline",
-                                        tint = MaterialTheme.colorScheme.primary
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
                                     )
                                 }
                                 IconButton(
                                     onClick = { viewModel.deleteDownload(item.id) },
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(40.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
                                         contentDescription = "Delete",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }

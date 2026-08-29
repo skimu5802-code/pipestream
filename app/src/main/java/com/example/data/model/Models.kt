@@ -58,7 +58,20 @@ data class StreamDetails(
     val relatedStreams: List<StreamItem> = emptyList(),
     val chapters: List<StreamChapter> = emptyList(),
     val isLive: Boolean = false
-)
+) {
+    fun toStreamItem(): StreamItem = StreamItem(
+        id = id,
+        title = title,
+        uploaderName = uploaderName,
+        uploaderUrl = uploaderUrl,
+        uploaderAvatar = uploaderAvatar,
+        durationSeconds = durationSeconds,
+        views = views,
+        uploadedDate = uploadDate,
+        thumbnailUrl = "https://img.youtube.com/vi/$id/hqdefault.jpg",
+        isLive = isLive
+    )
+}
 
 data class VideoStreamFormat(
     val url: String,

@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import com.example.data.model.StreamItem
 import com.example.player.PlaybackNotificationService
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -274,6 +275,8 @@ fun PipeStreamApp(viewModel: MainViewModel) {
     val isPlayerExpanded by viewModel.isPlayerExpanded.collectAsState()
     val detectedClipboardVideo by viewModel.detectedClipboardVideo.collectAsState()
     val showDownloadSheet by viewModel.showDownloadSheet.collectAsState()
+    val downloadTargetStream by viewModel.downloadTargetStream.collectAsState()
+    val downloadTargetDetails by viewModel.downloadTargetDetails.collectAsState()
     val activeDetails by viewModel.activeStreamDetails.collectAsState()
     val snackbarMsg by viewModel.snackBarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -459,12 +462,16 @@ fun PipeStreamApp(viewModel: MainViewModel) {
         }
 
         // Standalone Download Bottom Sheet (when triggered outside player)
-        if (showDownloadSheet && activeDetails != null && !isPlayerExpanded) {
+        val standaloneTarget: StreamItem? = downloadTargetStream 
+            ?: activeDetails?.toStreamItem() 
+            ?: playbackState.currentStream?.toStreamItem()
+        if (showDownloadSheet && standaloneTarget != null && !isPlayerExpanded) {
             DownloadBottomSheet(
-                stream = activeDetails!!,
+                stream = standaloneTarget,
+                streamDetails = downloadTargetDetails ?: activeDetails,
                 onDismiss = { viewModel.setShowDownloadSheet(false) },
                 onDownloadSelected = { quality, isAudioOnly ->
-                    viewModel.startDownload(quality, isAudioOnly)
+                    viewModel.startDownload(quality, isAudioOnly, standaloneTarget)
                 }
             )
         }

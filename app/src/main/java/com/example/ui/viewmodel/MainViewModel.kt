@@ -41,7 +41,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val downloadDao = db.downloadDao()
 
     val extractor = ExtractorEngine()
-    val playbackManager = MediaPlaybackManager(application.applicationContext)
+    val playbackManager = MediaPlaybackManager.getInstance(application.applicationContext)
     val downloadHelper = DownloadHelper(application.applicationContext, downloadDao)
     val updateManager = AppUpdateManager(application.applicationContext)
 
@@ -165,6 +165,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean("data_saver_enabled", enabled).apply()
     }
 
+    // Clipboard Link Auto-Detection
+    private val _clipboardDetectionEnabled = MutableStateFlow(
+        prefs.getBoolean("clipboard_detection_enabled", true)
+    )
+    val clipboardDetectionEnabled: StateFlow<Boolean> = _clipboardDetectionEnabled.asStateFlow()
+
+    fun setClipboardDetectionEnabled(enabled: Boolean) {
+        _clipboardDetectionEnabled.value = enabled
+        prefs.edit().putBoolean("clipboard_detection_enabled", enabled).apply()
+    }
+
     // Pause Watch History
     private val _pauseWatchHistory = MutableStateFlow(
         prefs.getBoolean("pause_watch_history", false)
@@ -276,6 +287,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isTrendingLoading = MutableStateFlow(false)
     val isTrendingLoading: StateFlow<Boolean> = _isTrendingLoading.asStateFlow()
 
+    private val _isLoadingMoreFeed = MutableStateFlow(false)
+    val isLoadingMoreFeed: StateFlow<Boolean> = _isLoadingMoreFeed.asStateFlow()
+
+    private var feedPageIndex = 0
+
     private val _feedErrorMessage = MutableStateFlow<String?>(null)
     val feedErrorMessage: StateFlow<String?> = _feedErrorMessage.asStateFlow()
 
@@ -331,10 +347,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Clipboard link detection state
     private val _detectedClipboardVideo = MutableStateFlow<ClipboardDetectedVideo?>(null)
     val detectedClipboardVideo: StateFlow<ClipboardDetectedVideo?> = _detectedClipboardVideo.asStateFlow()
-    private var lastDismissedClipboardText: String? = null
+    private var lastHandledClipboardVideoId: String? = prefs.getString("last_handled_clipboard_video_id", null)
 
     private val _showDownloadSheet = MutableStateFlow(false)
     val showDownloadSheet: StateFlow<Boolean> = _showDownloadSheet.asStateFlow()
+
+    private val _downloadTargetStream = MutableStateFlow<StreamItem?>(null)
+    val downloadTargetStream: StateFlow<StreamItem?> = _downloadTargetStream.asStateFlow()
+
+    private val _downloadTargetDetails = MutableStateFlow<StreamDetails?>(null)
+    val downloadTargetDetails: StateFlow<StreamDetails?> = _downloadTargetDetails.asStateFlow()
 
     private val _showQualityDialog = MutableStateFlow(false)
     val showQualityDialog: StateFlow<Boolean> = _showQualityDialog.asStateFlow()
@@ -347,6 +369,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _snackBarMessage = MutableStateFlow<String?>(null)
     val snackBarMessage: StateFlow<String?> = _snackBarMessage.asStateFlow()
+
+    private val _deletingDownloadIds = MutableStateFlow<Set<String>>(emptySet())
+    val deletingDownloadIds: StateFlow<Set<String>> = _deletingDownloadIds.asStateFlow()
 
     // Room Flows
     val historyFlow: StateFlow<List<HistoryEntity>> = historyDao.getAllHistory()
@@ -404,6 +429,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadCategoryFeed(category: String, forceRefresh: Boolean = false) {
         _selectedCategory.value = category
+        feedPageIndex = 0
         viewModelScope.launch {
             _isTrendingLoading.value = true
             _feedErrorMessage.value = null
@@ -441,6 +467,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             _isTrendingLoading.value = false
+        }
+    }
+
+    /**
+     * Infinite Dynamic Pagination: Fetches and appends next batch of streams
+     */
+    fun loadMoreFeed() {
+        if (_isTrendingLoading.value || _isLoadingMoreFeed.value) return
+        val currentCategory = _selectedCategory.value
+        val nextPage = feedPageIndex + 1
+
+        viewModelScope.launch {
+            _isLoadingMoreFeed.value = true
+            try {
+                val moreStreams = extractor.fetchNextFeedPage(
+                    category = currentCategory,
+                    pageIndex = nextPage,
+                    region = userCountryCode,
+                    history = historyFlow.value,
+                    subscriptions = subscriptionsFlow.value,
+                    bookmarks = bookmarksFlow.value
+                )
+
+                if (moreStreams.isNotEmpty()) {
+                    feedPageIndex = nextPage
+                    if (currentCategory.equals("For You", ignoreCase = true)) {
+                        val currentPersonalized = _personalizedStreams.value
+                        val updated = (currentPersonalized + moreStreams).distinctBy { it.id }
+                        _personalizedStreams.value = updated
+                    } else {
+                        val currentTrending = _trendingStreams.value
+                        val updated = (currentTrending + moreStreams).distinctBy { it.id }
+                        _trendingStreams.value = updated
+                    }
+
+                    // Pre-warm top 2 items
+                    launch(Dispatchers.IO) {
+                        moreStreams.take(2).forEach { item ->
+                            extractor.prewarmStreamDetails(item.id)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Best effort load more
+            } finally {
+                _isLoadingMoreFeed.value = false
+            }
         }
     }
 
@@ -674,11 +747,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun recordHandledClipboardVideo(videoId: String) {
+        lastHandledClipboardVideoId = videoId
+        prefs.edit().putString("last_handled_clipboard_video_id", videoId).apply()
+    }
+
     fun onClipboardTextDetected(text: String?) {
+        if (!_clipboardDetectionEnabled.value) return
         if (text.isNullOrBlank()) return
         val trimmed = text.trim()
-        if (trimmed == lastDismissedClipboardText) return
         val videoId = com.example.util.YouTubeUrlHelper.extractVideoId(trimmed) ?: return
+
+        // Prevent repeated detections for the same URL / Video ID already handled or dismissed
+        if (videoId == lastHandledClipboardVideoId) return
 
         // If modal already shows this video or player is already active on it, ignore
         if (_detectedClipboardVideo.value?.videoId == videoId) return
@@ -717,13 +798,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun dismissClipboardModal() {
         val current = _detectedClipboardVideo.value
         if (current != null) {
-            lastDismissedClipboardText = current.rawUrl
+            recordHandledClipboardVideo(current.videoId)
         }
         _detectedClipboardVideo.value = null
     }
 
     fun playDetectedClipboardVideo() {
         val current = _detectedClipboardVideo.value ?: return
+        recordHandledClipboardVideo(current.videoId)
         val item = StreamItem(
             id = current.videoId,
             title = current.title,
@@ -735,17 +817,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             views = 0L,
             uploadedDate = ""
         )
-        dismissClipboardModal()
+        _detectedClipboardVideo.value = null
         selectAndPlayStream(item)
     }
 
     fun downloadDetectedClipboardVideo() {
         val current = _detectedClipboardVideo.value ?: return
+        recordHandledClipboardVideo(current.videoId)
         val details = current.details
         if (details != null) {
             _activeStreamDetails.value = details
             _showDownloadSheet.value = true
-            dismissClipboardModal()
+            _detectedClipboardVideo.value = null
         } else {
             viewModelScope.launch {
                 showSnackbar("Fetching stream details for download...")
@@ -753,7 +836,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 res.onSuccess { d ->
                     _activeStreamDetails.value = d
                     _showDownloadSheet.value = true
-                    dismissClipboardModal()
+                    _detectedClipboardVideo.value = null
                 }.onFailure {
                     showSnackbar("Failed to prepare download: ${it.localizedMessage}")
                 }
@@ -779,6 +862,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun playYouTubeUrl(urlOrText: String) {
         val videoId = com.example.util.YouTubeUrlHelper.extractVideoId(urlOrText)
         if (videoId != null) {
+            recordHandledClipboardVideo(videoId)
             playVideoById(videoId)
         } else {
             showSnackbar("Could not find a valid YouTube link")
@@ -955,28 +1039,88 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startDownload(quality: String, isAudioOnly: Boolean, explicitStream: StreamDetails? = null) {
-        val stream = explicitStream ?: _activeStreamDetails.value ?: playbackState.value.currentStream ?: return
+    fun openDownloadSheetForStream(stream: StreamItem) {
+        _downloadTargetStream.value = stream
+        if (_activeStreamDetails.value?.id == stream.id) {
+            _downloadTargetDetails.value = _activeStreamDetails.value
+        } else {
+            _downloadTargetDetails.value = null
+            viewModelScope.launch {
+                val res = extractor.getStreamDetails(stream.id)
+                res.onSuccess { details ->
+                    if (_downloadTargetStream.value?.id == stream.id) {
+                        _downloadTargetDetails.value = details
+                    }
+                }
+            }
+        }
+        _showDownloadSheet.value = true
+    }
+
+    fun startDownload(quality: String, isAudioOnly: Boolean, explicitStream: StreamItem? = null) {
+        val stream: StreamItem = explicitStream 
+            ?: _downloadTargetStream.value 
+            ?: _activeStreamDetails.value?.toStreamItem() 
+            ?: playbackState.value.currentStream?.toStreamItem() 
+            ?: return
+
         _showDownloadSheet.value = false
 
+        val durationSec = stream.durationSeconds
+        val details = if (_activeStreamDetails.value?.id == stream.id) _activeStreamDetails.value else _downloadTargetDetails.value
+        val vStreams = details?.videoStreams ?: emptyList()
+        val aStreams = details?.audioStreams ?: emptyList()
+
         val metadataBytes = DownloadHelper.calculateExactMetadataBytes(
-            durationSeconds = stream.durationSeconds,
+            durationSeconds = durationSec,
             quality = quality,
             isAudioOnly = isAudioOnly,
-            videoStreams = stream.videoStreams,
-            audioStreams = stream.audioStreams
+            videoStreams = vStreams,
+            audioStreams = aStreams
         )
 
-        showSnackbar("Enqueuing download: ${stream.title.take(28)} (${quality})...")
+        val downloadId = java.util.UUID.randomUUID().toString()
+        val downloadsDir = DownloadHelper.resolveDownloadDirectory(
+            getApplication(),
+            _downloadDirectoryPath.value
+        )
+        val sanitizedTitle = stream.title.replace(Regex("[^a-zA-Z0-9.-]"), "_").take(40)
+        val extension = if (isAudioOnly) "m4a" else "mp4"
+        val destinationFile = java.io.File(downloadsDir, "${sanitizedTitle}_${quality}_$downloadId.$extension")
 
+        // 1. Instantly insert into Room DB so UI updates in 0ms
+        val initialEntity = DownloadEntity(
+            id = downloadId,
+            streamId = stream.id,
+            title = stream.title,
+            uploaderName = stream.uploaderName,
+            thumbnailUrl = if (stream.thumbnailUrl.isNotBlank()) stream.thumbnailUrl else "https://img.youtube.com/vi/${stream.id}/hqdefault.jpg",
+            localFilePath = destinationFile.absolutePath,
+            durationSeconds = durationSec,
+            totalBytes = metadataBytes,
+            downloadedBytes = 0L,
+            isAudioOnly = isAudioOnly,
+            quality = quality,
+            status = com.example.data.model.DownloadStatus.DOWNLOADING.name,
+            speedBytesPerSecond = 0L,
+            addedTimestamp = System.currentTimeMillis()
+        )
+
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            downloadDao.insertOrUpdate(initialEntity)
+        }
+
+        showSnackbar("Download started: ${stream.title.take(28)} (${quality})")
+
+        // 2. Resolve URL and trigger WorkManager in background
         viewModelScope.launch {
-            var currentDetails = stream
-            if (currentDetails.videoStreams.isEmpty() && currentDetails.audioStreams.isEmpty()) {
+            var currentDetails: StreamDetails? = _downloadTargetDetails.value ?: _activeStreamDetails.value
+            if (currentDetails == null || currentDetails.id != stream.id || (currentDetails.videoStreams.isEmpty() && currentDetails.audioStreams.isEmpty())) {
                 val res = extractor.getStreamDetails(stream.id)
-                res.onSuccess { currentDetails = it }
+                currentDetails = res.getOrNull()
             }
 
-            var downloadUrl = resolveDownloadUrl(currentDetails, quality, isAudioOnly)
+            var downloadUrl = currentDetails?.let { resolveDownloadUrl(it, quality, isAudioOnly) }
 
             if (downloadUrl.isNullOrBlank()) {
                 val freshRes = extractor.getStreamDetails(stream.id)
@@ -988,14 +1132,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             if (downloadUrl.isNullOrBlank()) {
-                showSnackbar("Could not resolve direct download link. Please try another format.")
+                showSnackbar("Could not resolve download link. Tap retry in Library.")
+                downloadDao.updateStatus(downloadId, com.example.data.model.DownloadStatus.FAILED.name)
                 return@launch
             }
 
-            // Probe exact byte length from server (no fallback guessing)
             val probedBytes = downloadHelper.probeExactStreamSizeBytes(
                 url = downloadUrl,
-                durationSeconds = stream.durationSeconds
+                durationSeconds = durationSec
             )
             val exactBytes = if (probedBytes > 0) probedBytes else metadataBytes
 
@@ -1005,10 +1149,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 uploader = stream.uploaderName,
                 thumbnailUrl = "https://img.youtube.com/vi/${stream.id}/hqdefault.jpg",
                 downloadUrl = downloadUrl,
-                durationSeconds = stream.durationSeconds,
+                durationSeconds = durationSec,
                 quality = quality,
                 isAudioOnly = isAudioOnly,
-                explicitSizeBytes = exactBytes
+                explicitSizeBytes = exactBytes,
+                existingDownloadId = downloadId
             )
         }
     }
@@ -1058,6 +1203,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun pauseDownload(downloadId: String) {
         viewModelScope.launch {
+            downloadDao.updateStatus(downloadId, com.example.data.model.DownloadStatus.PAUSED.name)
             downloadHelper.pauseOrCancelDownload(downloadId)
             showSnackbar("Download paused")
         }
@@ -1065,8 +1211,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteDownload(downloadId: String) {
         viewModelScope.launch {
-            downloadHelper.deleteDownload(downloadId)
-            showSnackbar("Download removed")
+            _deletingDownloadIds.value = _deletingDownloadIds.value + downloadId
+            try {
+                downloadHelper.deleteDownload(downloadId)
+                showSnackbar("Download deleted")
+            } catch (e: Exception) {
+                showSnackbar("Failed to delete download")
+            } finally {
+                _deletingDownloadIds.value = _deletingDownloadIds.value - downloadId
+            }
         }
     }
 
@@ -1095,6 +1248,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setShowDownloadSheet(show: Boolean) {
         _showDownloadSheet.value = show
+        if (show && _downloadTargetStream.value == null) {
+            _downloadTargetStream.value = _activeStreamDetails.value?.toStreamItem() ?: playbackState.value.currentStream?.toStreamItem()
+            _downloadTargetDetails.value = _activeStreamDetails.value ?: playbackState.value.currentStream
+        }
     }
 
     fun setShowQualityDialog(show: Boolean) {
@@ -1119,6 +1276,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        playbackManager.release()
+        // Do not release playbackManager here so background audio and foreground service continue seamlessly
     }
 }

@@ -53,6 +53,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
@@ -129,6 +130,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.example.data.model.StreamDetails
+import com.example.data.model.StreamItem
 import com.example.player.MediaPlaybackManager
 import com.example.player.PlaybackState
 import com.example.ui.theme.AccentAmber
@@ -190,6 +192,18 @@ fun VideoPlayerView(
     var doubleTapIcon by remember { mutableStateOf(Icons.Default.PlayArrow) }
     var doubleTapAlignment by remember { mutableStateOf(Alignment.Center) }
 
+    var currentTimeText by remember {
+        mutableStateOf(
+            java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date())
+        )
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            currentTimeText = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date())
+        }
+    }
+
     LaunchedEffect(doubleTapFeedback) {
         if (doubleTapFeedback != null) {
             delay(700)
@@ -231,11 +245,15 @@ fun VideoPlayerView(
     Box(
         modifier = viewportModifier
             .pointerInput(isLandscape) {
+                var startY = 0f
+                var startX = 0f
                 var totalY = 0f
                 var totalX = 0f
                 var gestureTriggered = false
                 detectDragGestures(
-                    onDragStart = {
+                    onDragStart = { offset ->
+                        startY = offset.y
+                        startX = offset.x
                         totalY = 0f
                         totalX = 0f
                         gestureTriggered = false
@@ -255,20 +273,32 @@ fun VideoPlayerView(
                         totalX += dragAmount.x
                         if (!gestureTriggered && Math.abs(totalY) > Math.abs(totalX) * 1.2f) {
                             if (isLandscape) {
-                                // Fullscreen: Swipe down to exit fullscreen
-                                if (totalY > 30f) {
-                                    gestureTriggered = true
-                                    change.consume()
-                                    (context as? Activity)?.let { exitFullscreen(it) }
+                                val isTopEdgeSwipe = startY < 90f
+                                if (isTopEdgeSwipe) {
+                                    // Edge swipe from very top of screen: Show system status bar
+                                    if (totalY > 15f) {
+                                        gestureTriggered = true
+                                        (context as? Activity)?.let { act ->
+                                            WindowInsetsControllerCompat(act.window, act.window.decorView)
+                                                .show(WindowInsetsCompat.Type.statusBars())
+                                        }
+                                    }
+                                } else {
+                                    // Content swipe down on video: Exit fullscreen to portrait
+                                    if (totalY > 40f) {
+                                        gestureTriggered = true
+                                        change.consume()
+                                        (context as? Activity)?.let { exitFullscreen(it) }
+                                    }
                                 }
                             } else {
                                 // Portrait: Swipe UP to enter fullscreen
-                                if (totalY < -30f) {
+                                if (totalY < -35f) {
                                     gestureTriggered = true
                                     change.consume()
                                     (context as? Activity)?.let { enterFullscreen(it) }
-                                } else if (totalY > 30f) {
-                                    // Portrait: Swipe DOWN to collapse
+                                } else if (totalY > 35f && startY > 60f) {
+                                    // Portrait: Swipe DOWN on stream viewport to collapse
                                     gestureTriggered = true
                                     change.consume()
                                     onCollapse()
@@ -548,12 +578,24 @@ fun VideoPlayerView(
                             )
                         )
                         .pointerInput(isLandscape) {
+                            var barStartY = 0f
                             detectDragGestures(
+                                onDragStart = { offset ->
+                                    barStartY = offset.y
+                                },
                                 onDrag = { change, dragAmount ->
                                     if (dragAmount.y > 15f) {
                                         change.consume()
                                         if (isLandscape) {
-                                            (context as? Activity)?.let { exitFullscreen(it) }
+                                            if (barStartY < 30f) {
+                                                // Edge pull: Show status bars
+                                                (context as? Activity)?.let { act ->
+                                                    WindowInsetsControllerCompat(act.window, act.window.decorView)
+                                                        .show(WindowInsetsCompat.Type.statusBars())
+                                                }
+                                            } else {
+                                                (context as? Activity)?.let { exitFullscreen(it) }
+                                            }
                                         } else {
                                             onCollapse()
                                         }
@@ -565,10 +607,10 @@ fun VideoPlayerView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left items: Collapse arrow + Quality indicator badge
+                    // Left items: Collapse arrow + Quality indicator badge + Live Clock
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         IconButton(
                             onClick = {
@@ -592,8 +634,8 @@ fun VideoPlayerView(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .clickable { onQualityClick() },
-                            color = SurfaceElevated.copy(alpha = 0.85f),
-                            border = BorderStroke(0.5.dp, SurfaceBorder)
+                            color = Color.Black.copy(alpha = 0.55f),
+                            border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.25f))
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
@@ -611,6 +653,32 @@ fun VideoPlayerView(
                                     color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // Live Clock Badge in Top Player Controls
+                        Surface(
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp)),
+                            color = Color.Black.copy(alpha = 0.55f),
+                            border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.25f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccessTime,
+                                    contentDescription = "Current Time",
+                                    tint = Color.White.copy(alpha = 0.9f),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = currentTimeText,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
@@ -1188,27 +1256,39 @@ fun MiniPlayerBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadBottomSheet(
-    stream: StreamDetails,
+    stream: StreamItem,
+    streamDetails: StreamDetails? = null,
     onDismiss: () -> Unit,
     onDownloadSelected: (quality: String, isAudioOnly: Boolean) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    fun calculateExactMb(qualityKey: String, isAudio: Boolean): String {
-        val exactBytes = com.example.player.DownloadHelper.resolveExactFormatSize(
-            qualityKey = qualityKey,
-            isAudio = isAudio,
-            durationSeconds = stream.durationSeconds,
-            videoStreams = stream.videoStreams,
-            audioStreams = stream.audioStreams
-        )
+    fun calculateDisplayMb(qualityKey: String, isAudio: Boolean): String {
+        val durationSec = stream.durationSeconds
+        val vStreams = streamDetails?.videoStreams ?: emptyList()
+        val aStreams = streamDetails?.audioStreams ?: emptyList()
+        val exactBytes = if (streamDetails != null) {
+            com.example.player.DownloadHelper.resolveExactFormatSize(
+                qualityKey = qualityKey,
+                isAudio = isAudio,
+                durationSeconds = durationSec,
+                videoStreams = vStreams,
+                audioStreams = aStreams
+            )
+        } else {
+            com.example.player.DownloadHelper.calculateExactMetadataBytes(
+                durationSeconds = durationSec,
+                quality = qualityKey,
+                isAudioOnly = isAudio
+            )
+        }
         return com.example.player.DownloadHelper.formatBytesToMb(exactBytes)
     }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = SurfaceDark,
+        containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = null
     ) {
         Column(
@@ -1225,19 +1305,19 @@ fun DownloadBottomSheet(
                 Text(
                     text = "Download Stream",
                     style = MaterialTheme.typography.titleLarge.copy(
-                        color = TextPrimary,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
                 )
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary)
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
             Text(
                 text = stream.title,
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -1247,7 +1327,7 @@ fun DownloadBottomSheet(
 
             Text(
                 text = "VIDEO FORMATS (MP4)",
-                color = CrimsonRed,
+                color = MaterialTheme.colorScheme.primary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.8.sp
@@ -1256,18 +1336,18 @@ fun DownloadBottomSheet(
             Spacer(modifier = Modifier.height(8.dp))
 
             listOf(
-                Triple("1080p Full HD", "1080p", calculateExactMb("1080p", false)),
-                Triple("720p HD", "720p", calculateExactMb("720p", false)),
-                Triple("480p SD", "480p", calculateExactMb("480p", false)),
-                Triple("360p Standard", "360p", calculateExactMb("360p", false))
+                Triple("1080p Full HD", "1080p", calculateDisplayMb("1080p", false)),
+                Triple("720p HD", "720p", calculateDisplayMb("720p", false)),
+                Triple("480p SD", "480p", calculateDisplayMb("480p", false)),
+                Triple("360p Standard", "360p", calculateDisplayMb("360p", false))
             ).forEach { (label, quality, size) ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
                         .clickable { onDownloadSelected(quality, false) },
-                    colors = CardDefaults.cardColors(containerColor = SurfaceElevated),
-                    border = BorderStroke(1.dp, SurfaceBorder),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Row(
@@ -1278,13 +1358,13 @@ fun DownloadBottomSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text(text = label, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(text = "High definition MP4 video", color = TextSecondary, fontSize = 11.sp)
+                            Text(text = label, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(text = "High definition MP4 video", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = size, color = CrimsonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(text = size, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Icon(Icons.Default.Download, contentDescription = null, tint = CrimsonRed, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -1303,16 +1383,16 @@ fun DownloadBottomSheet(
             Spacer(modifier = Modifier.height(8.dp))
 
             listOf(
-                Triple("HQ Audio (256 kbps)", "256kbps", calculateExactMb("256kbps", true)),
-                Triple("Standard Audio (128 kbps)", "128kbps", calculateExactMb("128kbps", true))
+                Triple("HQ Audio (256 kbps)", "256kbps", calculateDisplayMb("256kbps", true)),
+                Triple("Standard Audio (128 kbps)", "128kbps", calculateDisplayMb("128kbps", true))
             ).forEach { (label, quality, size) ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
                         .clickable { onDownloadSelected(quality, true) },
-                    colors = CardDefaults.cardColors(containerColor = SurfaceElevated),
-                    border = BorderStroke(1.dp, SurfaceBorder),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Row(
@@ -1323,8 +1403,8 @@ fun DownloadBottomSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text(text = label, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(text = "Crisp M4A/AAC Audio Only", color = TextSecondary, fontSize = 11.sp)
+                            Text(text = label, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(text = "Crisp M4A/AAC Audio Only", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(text = size, color = AccentAmber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -1348,10 +1428,10 @@ fun QualityPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = SurfaceDark,
+        containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp),
         title = {
-            Text("Stream Resolution", color = TextPrimary, fontWeight = FontWeight.Bold)
+            Text("Stream Resolution", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
         },
         text = {
             Column {
@@ -1373,12 +1453,12 @@ fun QualityPickerDialog(
                                 onQualitySelected(quality)
                                 onDismiss()
                             },
-                            colors = RadioButtonDefaults.colors(selectedColor = CrimsonRed)
+                            colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = quality,
-                            color = TextPrimary,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 15.sp,
                             fontWeight = if (currentQuality.contains(quality, ignoreCase = true)) FontWeight.Bold else FontWeight.Medium
                         )
@@ -1388,7 +1468,7 @@ fun QualityPickerDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel", color = CrimsonRed, fontWeight = FontWeight.Bold)
+                Text("Cancel", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
         }
     )
@@ -1404,10 +1484,10 @@ fun PlaybackSpeedDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = SurfaceDark,
+        containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp),
         title = {
-            Text("Playback Speed", color = TextPrimary, fontWeight = FontWeight.Bold)
+            Text("Playback Speed", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
         },
         text = {
             Column {
@@ -1429,12 +1509,12 @@ fun PlaybackSpeedDialog(
                                 onSpeedSelected(speed)
                                 onDismiss()
                             },
-                            colors = RadioButtonDefaults.colors(selectedColor = CrimsonRed)
+                            colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (speed == 1.0f) "1.0x (Normal)" else "${speed}x",
-                            color = TextPrimary,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 15.sp,
                             fontWeight = if (currentSpeed == speed) FontWeight.Bold else FontWeight.Medium
                         )
@@ -1444,7 +1524,7 @@ fun PlaybackSpeedDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel", color = CrimsonRed, fontWeight = FontWeight.Bold)
+                Text("Cancel", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
         }
     )
@@ -1465,7 +1545,7 @@ fun SleepTimerDialog(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = SurfaceDark,
+        containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = null
     ) {
         Column(
@@ -1499,20 +1579,20 @@ fun SleepTimerDialog(
                         Text(
                             text = "Sleep Timer",
                             style = MaterialTheme.typography.titleLarge.copy(
-                                color = TextPrimary,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp
                             )
                         )
                         Text(
                             text = "Pauses playback automatically before you sleep",
-                            color = TextSecondary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
                     }
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary)
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -1560,7 +1640,7 @@ fun SleepTimerDialog(
                                 }
                                 Text(
                                     text = displayTime,
-                                    color = TextPrimary,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     fontSize = 20.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
@@ -1585,7 +1665,7 @@ fun SleepTimerDialog(
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 text = "Quick extend duration:",
-                                color = TextMuted,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
                             )
                             Spacer(modifier = Modifier.height(6.dp))
@@ -1599,8 +1679,8 @@ fun SleepTimerDialog(
                                             .weight(1f)
                                             .clip(RoundedCornerShape(8.dp))
                                             .clickable { onExtendTimer(extra) },
-                                        color = SurfaceElevated,
-                                        border = BorderStroke(1.dp, SurfaceBorder)
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                                     ) {
                                         Text(
                                             text = "+$extra min",
@@ -1621,7 +1701,7 @@ fun SleepTimerDialog(
 
             Text(
                 text = "SELECT SLEEP DURATION",
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.8.sp
@@ -1640,11 +1720,11 @@ fun SleepTimerDialog(
                             onDismiss()
                         },
                     colors = CardDefaults.cardColors(
-                        containerColor = if (playbackState.stopAtEndOfTrack) AccentAmber.copy(alpha = 0.15f) else SurfaceElevated
+                        containerColor = if (playbackState.stopAtEndOfTrack) AccentAmber.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
                     ),
                     border = BorderStroke(
                         1.dp,
-                        if (playbackState.stopAtEndOfTrack) AccentAmber else SurfaceBorder
+                        if (playbackState.stopAtEndOfTrack) AccentAmber else MaterialTheme.colorScheme.outlineVariant
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -1658,13 +1738,13 @@ fun SleepTimerDialog(
                         Column {
                             Text(
                                 text = "End of this stream",
-                                color = TextPrimary,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
                             Text(
                                 text = "Playback stops when the currently playing stream ends",
-                                color = TextSecondary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
                             )
                         }
@@ -1690,11 +1770,11 @@ fun SleepTimerDialog(
                                         onDismiss()
                                     },
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) AccentAmber.copy(alpha = 0.15f) else SurfaceElevated
+                                    containerColor = if (isSelected) AccentAmber.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
                                 ),
                                 border = BorderStroke(
                                     1.dp,
-                                    if (isSelected) AccentAmber else SurfaceBorder
+                                    if (isSelected) AccentAmber else MaterialTheme.colorScheme.outlineVariant
                                 ),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -1707,7 +1787,7 @@ fun SleepTimerDialog(
                                 ) {
                                     Text(
                                         text = "$mins minutes",
-                                        color = TextPrimary,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                         fontSize = 13.sp
                                     )
@@ -1734,8 +1814,8 @@ fun SleepTimerDialog(
             // Custom Slider Duration
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = SurfaceElevated),
-                border = BorderStroke(1.dp, SurfaceBorder),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -1746,7 +1826,7 @@ fun SleepTimerDialog(
                     ) {
                         Text(
                             text = "Custom duration",
-                            color = TextPrimary,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Medium,
                             fontSize = 13.sp
                         )
@@ -1768,7 +1848,7 @@ fun SleepTimerDialog(
                         colors = SliderDefaults.colors(
                             thumbColor = AccentAmber,
                             activeTrackColor = AccentAmber,
-                            inactiveTrackColor = SurfaceHighlight
+                            inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
                         )
                     )
 

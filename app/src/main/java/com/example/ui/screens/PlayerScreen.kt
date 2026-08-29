@@ -93,14 +93,7 @@ import com.example.ui.components.QualityPickerDialog
 import com.example.ui.components.SleepTimerDialog
 import com.example.ui.components.VideoPlayerView
 import com.example.ui.theme.AccentAmber
-import com.example.ui.theme.BackgroundDark
 import com.example.ui.theme.CrimsonRed
-import com.example.ui.theme.SurfaceBorder
-import com.example.ui.theme.SurfaceDark
-import com.example.ui.theme.SurfaceElevated
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.MainViewModel
 
 @Composable
@@ -156,7 +149,7 @@ fun PlayerScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(BackgroundDark)
+            .background(MaterialTheme.colorScheme.background)
             .testTag("full_player_screen")
     ) {
         // ExoPlayer viewport (clean edge-to-edge player without top screen title bar)
@@ -178,7 +171,7 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator(color = CrimsonRed, strokeWidth = 3.dp)
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 3.dp)
                 }
             } else {
                 LazyColumn(
@@ -207,7 +200,7 @@ fun PlayerScreen(
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 17.sp,
-                                color = TextPrimary,
+                                color = MaterialTheme.colorScheme.onBackground,
                                 lineHeight = 22.sp
                             ),
                             maxLines = 2,
@@ -217,7 +210,7 @@ fun PlayerScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "${formatViews(stream.views)} • ${formatRelativeTime(stream.uploadDate)}",
-                                color = TextSecondary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -273,7 +266,7 @@ fun PlayerScreen(
                             icon = Icons.Default.LockClock,
                             label = if (playbackState.stopAtEndOfTrack) "Sleep (End)" else if (playbackState.sleepTimerMinutesRemaining != null) "${playbackState.sleepTimerMinutesRemaining}m" else "Sleep Timer",
                             isActive = isSleepTimerActive,
-                            activeColor = com.example.ui.theme.AccentAmber,
+                            activeColor = AccentAmber,
                             onClick = { viewModel.setShowSleepTimerDialog(true) }
                         )
 
@@ -305,8 +298,8 @@ fun PlayerScreen(
                                 .padding(horizontal = 16.dp, vertical = 4.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable { viewModel.setShowSleepTimerDialog(true) },
-                            color = com.example.ui.theme.AccentAmber.copy(alpha = 0.12f),
-                            border = BorderStroke(1.dp, com.example.ui.theme.AccentAmber.copy(alpha = 0.35f))
+                            color = AccentAmber.copy(alpha = 0.12f),
+                            border = BorderStroke(1.dp, AccentAmber.copy(alpha = 0.35f))
                         ) {
                             Row(
                                 modifier = Modifier
@@ -322,7 +315,7 @@ fun PlayerScreen(
                                     Icon(
                                         imageVector = Icons.Default.LockClock,
                                         contentDescription = "Sleep timer active",
-                                        tint = com.example.ui.theme.AccentAmber,
+                                        tint = AccentAmber,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -337,8 +330,8 @@ fun PlayerScreen(
                                     }
                                     Text(
                                         text = timeStr,
-                                        color = com.example.ui.theme.AccentAmber,
-                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        color = AccentAmber,
+                                        fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp
                                     )
                                 }
@@ -348,13 +341,13 @@ fun PlayerScreen(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(6.dp))
                                                 .clickable { viewModel.playbackManager.extendSleepTimer(5) },
-                                            color = com.example.ui.theme.SurfaceElevated,
-                                            border = BorderStroke(1.dp, com.example.ui.theme.SurfaceBorder)
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                                         ) {
                                             Text(
                                                 text = "+5m",
-                                                color = com.example.ui.theme.AccentAmber,
-                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                                color = AccentAmber,
+                                                fontWeight = FontWeight.Bold,
                                                 fontSize = 11.sp,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                                             )
@@ -368,7 +361,7 @@ fun PlayerScreen(
                                         Icon(
                                             imageVector = Icons.Default.Close,
                                             contentDescription = "Cancel timer",
-                                            tint = com.example.ui.theme.TextMuted,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.size(15.dp)
                                         )
                                     }
@@ -385,8 +378,8 @@ fun PlayerScreen(
                             .fillMaxWidth()
                             .padding(16.dp),
                         shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = SurfaceElevated),
-                        border = BorderStroke(1.dp, SurfaceBorder)
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
                         Row(
                             modifier = Modifier
@@ -413,7 +406,7 @@ fun PlayerScreen(
                                         modifier = Modifier
                                             .size(42.dp)
                                             .clip(CircleShape)
-                                            .background(CrimsonRed),
+                                            .background(MaterialTheme.colorScheme.primary),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
@@ -430,7 +423,7 @@ fun PlayerScreen(
                                 Column {
                                     Text(
                                         text = stream.uploaderName,
-                                        color = TextPrimary,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
                                         maxLines = 1,
@@ -438,7 +431,7 @@ fun PlayerScreen(
                                     )
                                     Text(
                                         text = if (stream.uploaderSubscribers > 0) "${formatViews(stream.uploaderSubscribers)} subscribers" else "Channel Creator",
-                                        color = TextSecondary,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 11.sp
                                     )
                                 }
@@ -448,10 +441,10 @@ fun PlayerScreen(
                             Button(
                                 onClick = { viewModel.toggleSubscription() },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isSubscribed) SurfaceDark else CrimsonRed,
-                                    contentColor = Color.White
+                                    containerColor = if (isSubscribed) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary,
+                                    contentColor = if (isSubscribed) MaterialTheme.colorScheme.onSurface else Color.White
                                 ),
-                                border = if (isSubscribed) BorderStroke(1.dp, SurfaceBorder) else null,
+                                border = if (isSubscribed) BorderStroke(1.dp, MaterialTheme.colorScheme.outline) else null,
                                 shape = RoundedCornerShape(20.dp),
                                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                             ) {
@@ -470,12 +463,12 @@ fun PlayerScreen(
                     val tabTitles = listOf("Up Next", "Comments (${comments.size})", "Details")
                     TabRow(
                         selectedTabIndex = selectedTabIndex,
-                        containerColor = BackgroundDark,
-                        contentColor = TextPrimary,
+                        containerColor = MaterialTheme.colorScheme.background,
+                        contentColor = MaterialTheme.colorScheme.onBackground,
                         indicator = { tabPositions ->
                             TabRowDefaults.SecondaryIndicator(
                                 Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
-                                color = CrimsonRed
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     ) {
@@ -488,7 +481,7 @@ fun PlayerScreen(
                                         text = title,
                                         fontSize = 12.sp,
                                         fontWeight = if (selectedTabIndex == index) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (selectedTabIndex == index) CrimsonRed else TextSecondary
+                                        color = if (selectedTabIndex == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             )
@@ -511,12 +504,12 @@ fun PlayerScreen(
                                 ) {
                                     if (isDetailsLoading) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            CircularProgressIndicator(color = CrimsonRed, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+                                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
                                             Spacer(modifier = Modifier.height(10.dp))
-                                            Text("Loading recommendations...", color = TextSecondary, fontSize = 12.sp)
+                                            Text("Loading recommendations...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                                         }
                                     } else {
-                                        Text("No recommendations found", color = TextSecondary, fontSize = 13.sp)
+                                        Text("No recommendations found", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                                     }
                                 }
                             }
@@ -542,12 +535,12 @@ fun PlayerScreen(
                                 ) {
                                     if (isDetailsLoading) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            CircularProgressIndicator(color = CrimsonRed, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+                                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
                                             Spacer(modifier = Modifier.height(10.dp))
-                                            Text("Loading comments...", color = TextSecondary, fontSize = 12.sp)
+                                            Text("Loading comments...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                                         }
                                     } else {
-                                        Text("No comments loaded for this stream", color = TextSecondary, fontSize = 13.sp)
+                                        Text("No comments loaded for this stream", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                                     }
                                 }
                             }
@@ -564,13 +557,13 @@ fun PlayerScreen(
                                 Text(
                                     text = "Description",
                                     fontWeight = FontWeight.Bold,
-                                    color = TextPrimary,
+                                    color = MaterialTheme.colorScheme.onBackground,
                                     fontSize = 14.sp
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = stream.description.ifBlank { "High-speed stream with pure audio/video decoding." },
-                                    color = TextSecondary,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp
                                 )
@@ -579,14 +572,14 @@ fun PlayerScreen(
                                 Text(
                                     text = "Stream Details",
                                     fontWeight = FontWeight.Bold,
-                                    color = TextPrimary,
+                                    color = MaterialTheme.colorScheme.onBackground,
                                     fontSize = 14.sp
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = SurfaceElevated),
-                                    border = BorderStroke(1.dp, SurfaceBorder),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Column(modifier = Modifier.padding(12.dp)) {
@@ -594,15 +587,15 @@ fun PlayerScreen(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Text("Format / Quality", color = TextSecondary, fontSize = 12.sp)
-                                            Text(playbackState.selectedQuality, color = CrimsonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text("Format / Quality", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                            Text(playbackState.selectedQuality, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                         }
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Text("Extraction Protocol", color = TextSecondary, fontSize = 12.sp)
+                                            Text("Extraction Protocol", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                                             Text("NewPipeExtractor v0.26.5", color = Color(0xFF4CAF50), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                         }
                                         Spacer(modifier = Modifier.height(6.dp))
@@ -610,8 +603,8 @@ fun PlayerScreen(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Text("Video ID", color = TextSecondary, fontSize = 12.sp)
-                                            Text(stream.id, color = TextPrimary, fontSize = 12.sp)
+                                            Text("Video ID", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                            Text(stream.id, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
                                         }
                                     }
                                 }
@@ -621,7 +614,7 @@ fun PlayerScreen(
                                     Text(
                                         text = "Chapters",
                                         fontWeight = FontWeight.Bold,
-                                        color = TextPrimary,
+                                        color = MaterialTheme.colorScheme.onBackground,
                                         fontSize = 14.sp
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -636,13 +629,13 @@ fun PlayerScreen(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Surface(
-                                                color = CrimsonRed.copy(alpha = 0.15f),
-                                                border = BorderStroke(1.dp, CrimsonRed.copy(alpha = 0.3f)),
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
                                                 shape = RoundedCornerShape(8.dp)
                                             ) {
                                                 Text(
                                                     text = formatSeconds(chapter.startSeconds),
-                                                    color = CrimsonRed,
+                                                    color = MaterialTheme.colorScheme.primary,
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 11.sp,
                                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -651,7 +644,7 @@ fun PlayerScreen(
                                             Spacer(modifier = Modifier.width(12.dp))
                                             Text(
                                                 text = chapter.title,
-                                                color = TextPrimary,
+                                                color = MaterialTheme.colorScheme.onSurface,
                                                 fontWeight = FontWeight.Medium,
                                                 fontSize = 13.sp
                                             )
@@ -668,12 +661,15 @@ fun PlayerScreen(
     }
 
     // Download format selection sheet
-    if (showDownloadSheet && activeDetails != null) {
+    val downloadTarget = activeDetails ?: playbackState.currentStream
+    if (showDownloadSheet && downloadTarget != null) {
+        val targetItem = downloadTarget.toStreamItem()
         DownloadBottomSheet(
-            stream = activeDetails!!,
+            stream = targetItem,
+            streamDetails = activeDetails,
             onDismiss = { viewModel.setShowDownloadSheet(false) },
             onDownloadSelected = { quality, isAudioOnly ->
-                viewModel.startDownload(quality, isAudioOnly)
+                viewModel.startDownload(quality, isAudioOnly, targetItem)
             }
         )
     }
@@ -728,15 +724,15 @@ fun PlayerActionButton(
     ) {
         Surface(
             shape = CircleShape,
-            color = if (isActive) activeColor else SurfaceElevated,
-            border = BorderStroke(1.dp, if (isActive) activeColor else SurfaceBorder),
+            color = if (isActive) activeColor else MaterialTheme.colorScheme.surfaceVariant,
+            border = BorderStroke(1.dp, if (isActive) activeColor else MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.size(36.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = icon,
                     contentDescription = label,
-                    tint = if (isActive) (if (activeColor == com.example.ui.theme.AccentAmber) androidx.compose.ui.graphics.Color.Black else androidx.compose.ui.graphics.Color.White) else TextPrimary,
+                    tint = if (isActive) (if (activeColor == AccentAmber) androidx.compose.ui.graphics.Color.Black else androidx.compose.ui.graphics.Color.White) else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -744,7 +740,7 @@ fun PlayerActionButton(
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = label,
-            color = if (isActive) activeColor else TextSecondary,
+            color = if (isActive) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 10.sp,
             fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium
         )
@@ -773,12 +769,12 @@ fun CommentRow(comment: CommentItem) {
                 modifier = Modifier
                     .size(34.dp)
                     .clip(CircleShape)
-                    .background(SurfaceElevated),
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = comment.author.take(1).uppercase(),
-                    color = CrimsonRed,
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
@@ -792,20 +788,20 @@ fun CommentRow(comment: CommentItem) {
                 Text(
                     text = comment.author,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 12.sp
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "• ${comment.timeAgo}",
-                    color = TextMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                     fontSize = 11.sp
                 )
             }
             Spacer(modifier = Modifier.height(3.dp))
             Text(
                 text = comment.content,
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 lineHeight = 17.sp
             )
@@ -814,14 +810,14 @@ fun CommentRow(comment: CommentItem) {
                 Icon(
                     imageVector = Icons.Outlined.ThumbUp,
                     contentDescription = null,
-                    tint = TextMuted,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                     modifier = Modifier.size(13.dp)
                 )
                 if (comment.likeCount > 0) {
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "${comment.likeCount}",
-                        color = TextMuted,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                         fontSize = 11.sp
                     )
                 }

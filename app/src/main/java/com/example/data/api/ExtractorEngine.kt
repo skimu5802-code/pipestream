@@ -115,6 +115,256 @@ class ExtractorEngine {
         }
 
     /**
+     * Dynamic Smart Re-Ranking Algorithm (Local Intelligence)
+     * Combines Recency, Channel Affinity, Topic Relevance, and Epsilon Exploration Jitter.
+     */
+    fun rankPersonalizedStreams(
+        items: List<StreamItem>,
+        history: List<HistoryEntity>,
+        subscriptions: List<SubscriptionEntity>,
+        bookmarks: List<BookmarkEntity>
+    ): List<StreamItem> {
+        if (items.isEmpty()) return items
+
+        // 1. Build channel affinity frequency map
+        val channelAffinity = mutableMapOf<String, Int>()
+        subscriptions.forEach { sub ->
+            val name = sub.channelName.trim().lowercase()
+            if (name.isNotBlank()) channelAffinity[name] = (channelAffinity[name] ?: 0) + 5
+        }
+        history.forEach { h ->
+            val name = h.uploaderName.trim().lowercase()
+            if (name.isNotBlank()) channelAffinity[name] = (channelAffinity[name] ?: 0) + 2
+        }
+        bookmarks.forEach { b ->
+            val name = b.uploaderName.trim().lowercase()
+            if (name.isNotBlank()) channelAffinity[name] = (channelAffinity[name] ?: 0) + 3
+        }
+
+        // 2. Extract user topic keywords from watched history and bookmarks
+        val userKeywords = mutableMapOf<String, Int>()
+        val stopWords = setOf(
+            "video", "official", "youtube", "the", "and", "new", "full", "hd", "2024", "2025", "2026",
+            "bangla", "hindi", "english", "episode", "part", "song", "with", "for", "from"
+        )
+        (history.take(20).map { it.title } + bookmarks.map { it.title }).forEach { title ->
+            val tokens = title.lowercase().replace(Regex("[^a-z0-9\\u0980-\\u09FF]"), " ").split("\\s+".toRegex())
+            tokens.filter { it.length >= 3 && it !in stopWords }.forEach { word ->
+                userKeywords[word] = (userKeywords[word] ?: 0) + 1
+            }
+        }
+
+        val random = java.util.Random()
+
+        // 3. Compute hybrid score for each item
+        val scoredItems = items.map { item ->
+            var score = 0
+
+            // A. Recency & Freshness Base Score
+            val date = item.uploadedDate.lowercase().trim()
+            val freshnessScore = when {
+                date.contains("second") || date.contains("minute") || date.contains("hour") || date.contains("just now") || item.isLive -> 1000
+                date.contains("yesterday") || date.contains("1 day") || date.contains("2 day") || date.contains("3 day") || (date.contains("day") && !date.contains("year")) -> 750
+                date.contains("1 week") || date.contains("2 week") || date.contains("3 week") || date.contains("4 week") || (date.contains("week") && !date.contains("year")) -> 550
+                date.contains("1 month") || date.contains("2 month") || date.contains("3 month") -> 350
+                date.contains("4 month") || date.contains("5 month") || date.contains("6 month") -> 200
+                date.contains("1 year") -> -50
+                date.contains("year") -> -600
+                else -> 100
+            }
+            score += freshnessScore
+
+            // B. Channel Affinity Boost
+            val uploaderKey = item.uploaderName.trim().lowercase()
+            channelAffinity[uploaderKey]?.let { affinityCount ->
+                score += (affinityCount * 70).coerceAtMost(400)
+            }
+
+            // C. Topic & Title Keyword Relevance Boost
+            val itemTokens = item.title.lowercase().replace(Regex("[^a-z0-9\\u0980-\\u09FF]"), " ").split("\\s+".toRegex())
+            var keywordMatchCount = 0
+            itemTokens.forEach { token ->
+                userKeywords[token]?.let { weight ->
+                    score += (weight * 40).coerceAtMost(200)
+                    keywordMatchCount++
+                }
+            }
+
+            // D. Exploration Epsilon / Dynamic Jitter (adds healthy 10-15% exploration variety)
+            val jitter = random.nextInt(120)
+            score += jitter
+
+            // Bonus for live stream or fresh title indicators
+            if (item.isLive || item.title.contains("2026") || item.title.contains("2025")) {
+                score += 100
+            }
+
+            item to score
+        }
+
+        return scoredItems.sortedByDescending { it.second }.map { it.first }
+    }
+
+    /**
+     * Infinite Pagination & Endless Dynamic Feed Engine
+     * Fetches subsequent pages using query expansions and diverse category sub-genres.
+     */
+    suspend fun fetchNextFeedPage(
+        category: String,
+        pageIndex: Int,
+        region: String = "BD",
+        history: List<HistoryEntity> = emptyList(),
+        subscriptions: List<SubscriptionEntity> = emptyList(),
+        bookmarks: List<BookmarkEntity> = emptyList()
+    ): List<StreamItem> = withContext(Dispatchers.IO) {
+        val countryName = when (region.uppercase()) {
+            "BD" -> "Bangladesh"
+            "IN" -> "India"
+            "PK" -> "Pakistan"
+            "US" -> "United States"
+            "GB" -> "United Kingdom"
+            else -> region
+        }
+
+        val queries = mutableListOf<String>()
+        val isBD = region.equals("BD", ignoreCase = true)
+
+        when (category.lowercase()) {
+            "for you", "all", "trending" -> {
+                // Generate varied query seeds based on page index
+                when (pageIndex % 6) {
+                    0 -> {
+                        if (isBD) {
+                            queries.add("bangla trending viral video new 2025 2026")
+                            queries.add("bangla entertainment comedy drama highlights")
+                        } else {
+                            queries.add("trending popular videos in $countryName 2025 2026")
+                            queries.add("viral new hits today $countryName")
+                        }
+                    }
+                    1 -> {
+                        // User topic / creator expansion
+                        subscriptions.take(3).forEach { queries.add("${it.channelName} new official 2025 2026") }
+                        if (queries.isEmpty()) {
+                            queries.add(if (isBD) "bangla new natok drama episode 2025 2026" else "top music and entertainment $countryName 2025 2026")
+                        }
+                    }
+                    2 -> {
+                        if (isBD) {
+                            queries.add("bangla popular tech review smartphone gadgets 2025 2026")
+                            queries.add("bangla talk show podcast full episode 2025 2026")
+                        } else {
+                            queries.add("technology gadgets reviews 2025 2026 $countryName")
+                            queries.add("popular podcast highlights 2025 2026")
+                        }
+                    }
+                    3 -> {
+                        if (isBD) {
+                            queries.add("bangla top music video official song 2025 2026")
+                            queries.add("bangla funny viral clip comedy 2025 2026")
+                        } else {
+                            queries.add("trending music video official latest 2025 2026")
+                            queries.add("comedy funny videos viral $countryName")
+                        }
+                    }
+                    4 -> {
+                        if (isBD) {
+                            queries.add("bangla new short film drama episode 2025 2026")
+                            queries.add("bangladesh latest special report news bulletin")
+                        } else {
+                            queries.add("new viral documentary special report $countryName")
+                            queries.add("trending gaming live stream 2025 2026")
+                        }
+                    }
+                    else -> {
+                        if (isBD) {
+                            queries.add("bangla new releases entertainment review today 2025 2026")
+                            queries.add("bangla lifestyle vlog travel food tour 2025 2026")
+                        } else {
+                            queries.add("top vlog travel lifestyle highlights $countryName")
+                            queries.add("popular new releases this week $countryName")
+                        }
+                    }
+                }
+            }
+            "natok & drama" -> {
+                when (pageIndex % 4) {
+                    0 -> queries.add("bangla new natok comedy drama full episode 2025 2026")
+                    1 -> queries.add("bangla telefilm popular drama new episodes 2025 2026")
+                    2 -> queries.add("bangla romantic natok comedy drama serial 2025 2026")
+                    else -> queries.add("bangla eid special natok superhit drama 2025 2026")
+                }
+            }
+            "music" -> {
+                when (pageIndex % 4) {
+                    0 -> queries.add(if (isBD) "bangla new music video official song 2025 2026" else "top hit music songs official 2025 2026")
+                    1 -> queries.add(if (isBD) "bangla acoustic unplugged live songs 2025 2026" else "top trending songs global hits 2025 2026")
+                    2 -> queries.add(if (isBD) "bangla romantic lyrical song new album 2025 2026" else "new pop hiphop songs 2025 2026")
+                    else -> queries.add(if (isBD) "bangla folk sufiyana fusion songs 2025 2026" else "chill lofi music playlist relaxing 2025 2026")
+                }
+            }
+            "tech" -> {
+                when (pageIndex % 4) {
+                    0 -> queries.add(if (isBD) "bangla tech review smartphone unboxing 2025 2026" else "tech reviews smartphone unboxing 2025 2026")
+                    1 -> queries.add(if (isBD) "bangla gadget review laptop camera pc build" else "gadgets laptop camera AI tech 2025 2026")
+                    2 -> queries.add(if (isBD) "bangla best budget smartphone comparison 2025 2026" else "budget smartphone comparisons 2025 2026")
+                    else -> queries.add(if (isBD) "bangla future technology AI coding tips" else "AI tools future tech trends 2025 2026")
+                }
+            }
+            "gaming" -> {
+                when (pageIndex % 4) {
+                    0 -> queries.add(if (isBD) "bangla gaming live stream gameplay 2025 2026" else "trending gaming gameplay highlights 2025 2026")
+                    1 -> queries.add(if (isBD) "bangla pubg gta freefire gameplay funny moments" else "gaming funny moments epic highlights 2025 2026")
+                    2 -> queries.add(if (isBD) "bangla esports tournament highlights" else "esports tournament highlights finals 2025 2026")
+                    else -> queries.add(if (isBD) "bangla horror gameplay pc gaming walkthorough" else "new game trailer gameplay walkthrough 2025 2026")
+                }
+            }
+            "news" -> {
+                when (pageIndex % 3) {
+                    0 -> queries.add(if (isBD) "bangladesh news today live bulletin latest" else "latest news headlines today live $countryName")
+                    1 -> queries.add(if (isBD) "bangla breaking news highlights talk show" else "world news analysis special report today")
+                    else -> queries.add(if (isBD) "bangladesh international news today" else "breaking news live updates today")
+                }
+            }
+            "podcasts" -> {
+                when (pageIndex % 3) {
+                    0 -> queries.add(if (isBD) "bangla podcast full episode talk show 2025 2026" else "popular podcast full episode 2025 2026")
+                    1 -> queries.add(if (isBD) "bangla interview conversation podcast celebrity" else "deep conversation podcast interview 2025 2026")
+                    else -> queries.add(if (isBD) "bangla motivational inspirational podcast" else "motivational podcast self improvement 2025 2026")
+                }
+            }
+            "islamic" -> {
+                when (pageIndex % 3) {
+                    0 -> queries.add("bangla new waz islamic discussion quran 2025 2026")
+                    1 -> queries.add("bangla islamic lecture quran tafseer full waz 2025 2026")
+                    else -> queries.add("bangla beautiful quran recitation nasheed 2025 2026")
+                }
+            }
+            else -> {
+                queries.add("$category trending latest 2025 2026 $countryName")
+                queries.add("$category new episodes popular 2025 2026")
+            }
+        }
+
+        val results = mutableListOf<StreamItem>()
+        coroutineScope {
+            val defs = queries.map { q ->
+                async { fetchCategoryViaSearch(q) }
+            }
+            defs.forEach { def ->
+                def.await()?.let { results.addAll(it) }
+            }
+        }
+
+        val freshRanked = filterAndRankByFreshness(results.distinctBy { it.id }, strictRecency = true)
+        if (category.equals("For You", ignoreCase = true) && (history.isNotEmpty() || subscriptions.isNotEmpty())) {
+            rankPersonalizedStreams(freshRanked, history, subscriptions, bookmarks)
+        } else {
+            freshRanked
+        }
+    }
+
+    /**
      * YouTube-Style Recency & Freshness Scorer
      * Filters out stale content (e.g. 2+ or 4+ years old) and prioritizes recent, viral, and newly released videos.
      */
@@ -423,7 +673,8 @@ class ExtractorEngine {
             }
         }
 
-        filterAndRankByFreshness(candidates, strictRecency = true)
+        val rankedCandidates = rankPersonalizedStreams(candidates, history, subscriptions, bookmarks)
+        filterAndRankByFreshness(rankedCandidates, strictRecency = true)
     }
 
     suspend fun search(query: String, filter: String = "all"): Result<List<StreamItem>> =

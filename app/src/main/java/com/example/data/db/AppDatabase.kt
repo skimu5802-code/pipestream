@@ -79,6 +79,9 @@ interface DownloadDao {
     @Update
     suspend fun update(download: DownloadEntity)
 
+    @Query("UPDATE downloads SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: String, status: String)
+
     @Query("DELETE FROM downloads WHERE id = :id")
     suspend fun deleteById(id: String)
 

@@ -270,8 +270,7 @@ fun SearchScreen(
                         stream = stream,
                         onStreamClick = { viewModel.selectAndPlayStream(it) },
                         onDownloadClick = {
-                            viewModel.selectAndPlayStream(it)
-                            viewModel.setShowDownloadSheet(true)
+                            viewModel.openDownloadSheetForStream(it)
                         }
                     )
                 }
